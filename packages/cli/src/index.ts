@@ -1,28 +1,10 @@
-// cli client
-import { askAI } from "@openkode/core";
-
-
-async function main() {
-
-    const prompt =
-        process.argv.slice(2).join(" ");
-
-
-    if (!prompt) {
-        console.log(
-            "Usage: openkode <question>"
-        );
-        return;
-    }
-
-
-    const response = await askAI(prompt);
-
-
-    console.log("\n🤖 OpenKode:");
-    console.log(response);
-
-}
-
-
-main();
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { loadCommands } from './commands/llmcall.js';
+const program = new Command();
+program
+    .name('openkode-cli-tool')
+    .description('A powerful CLI tool built with TypeScript')
+    .version('1.0.0');
+loadCommands(program);
+program.parse(process.argv);
