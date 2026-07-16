@@ -1,7 +1,7 @@
 // cli client
-import { streamAIResponse } from '@openkode/core';
+
+import { createOpenKodeAgent } from '@openkode/core';
 import { Command } from 'commander';
-//import { askAI } from "@openkode/core";
 
 export function loadPromptCommand(program: Command) {
     program
@@ -11,19 +11,24 @@ export function loadPromptCommand(program: Command) {
                 program.help();
                 return;
             }
-
             //const response = await askAI(prompt.join(" "));
+            //prompt : AgentRequest
+            //await agent.run(prompt)
+            // await streamAIResponse(
+            //     prompt.join(" "),
+            //     (chunk) => {
+            //         process.stdout.write(chunk);
+            //     }
+            // );
+            const openkode = createOpenKodeAgent();
+            const response = await openkode.run({
+                prompt: prompt.join(" ")
+            })
 
-            console.log("\n🤖 OpenKode:");
-            await streamAIResponse(
-                prompt.join(" "),
-                (chunk) => {
-                    process.stdout.write(chunk);
-                }
-            );
 
+            console.log("\n🤖 OpenKode:\n");
 
-            console.log("\n");
-            //console.log(response);
+            console.log(response.response);
+
         });
 }
