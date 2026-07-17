@@ -3,6 +3,7 @@
 import type { LLMProvider } from "../interface/LLMProvider.js";
 import type { LLMRequest } from "../interface/LLMRequest.js";
 import type { LLMResponse } from "../interface/LLMResponse.js";
+import type { LLMUsage } from "../interface/LLMUsage.js";
 
 export class OllamaProvider implements LLMProvider {
     async generate(request: LLMRequest): Promise<LLMResponse> {
@@ -28,7 +29,7 @@ export class OllamaProvider implements LLMProvider {
         };
     }
 
-    async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<void> {
+    async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<{usage:LLMUsage}> {
         const response = await fetch("http://localhost:11434/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -48,6 +49,8 @@ export class OllamaProvider implements LLMProvider {
         const decoder = new TextDecoder();
         let buffer = "";
 
+        let usage: LLMUsage | undefined;
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -58,9 +61,24 @@ export class OllamaProvider implements LLMProvider {
 
             for (const line of lines) {
                 if (!line.trim()) continue;
-                const chunk = JSON.parse(line) as { response?: string };
+                const chunk = JSON.parse(line) ;
                 if (chunk.response) onChunk(chunk.response);
+                if(chunk.done){
+                    usage = {
+                        inputTokens: chunk.prompt_eval_count,
+                        outputTokens: chunk.eval_count,
+                        totalDurationNs: chunk.total_duration,
+                        promptEvalDurationNs: chunk.prompt_eval_duration,
+                        evalDurationNs: chunk.eval_duration,
+                    };
+                }
             }
         }
+
+        if (!usage) {
+            throw new Error("Ollama stream ended without usage data");
+        }
+
+        return { usage };
     }
 }

@@ -21,11 +21,12 @@ export function loadPromptCommand(program: Command) {
             console.log("\n🤖 OpenKode is thinking....\n");
             console.log("\n🤖 OpenKode says:\n");
             
-            await openkode.stream(prompt.join(" "), (chunk) => {
-            process.stdout.write(chunk);
+            const result = await openkode.stream(prompt.join(" "), (chunk) => {
+                process.stdout.write(chunk);
             });
 
-            console.log();
+            console.log(`\nInput tokens: ${result.usage.inputTokens}`);
+            console.log(`Output tokens: ${result.usage.outputTokens}`);
 
         });
 }
