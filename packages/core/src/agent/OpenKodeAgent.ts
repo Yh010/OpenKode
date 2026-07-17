@@ -18,4 +18,9 @@ export class OpenKodeAgent {
 
         return agentresponse;
     }
+
+    // packages/core/src/agent/OpenKodeAgent.ts
+    async stream(prompt: string, onChunk: (text: string) => void): Promise<void> {
+        await this.llm.stream({ prompt }, onChunk);
+    }
 }

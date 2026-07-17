@@ -11,24 +11,21 @@ export function loadPromptCommand(program: Command) {
                 program.help();
                 return;
             }
-            //const response = await askAI(prompt.join(" "));
-            //prompt : AgentRequest
-            //await agent.run(prompt)
-            // await streamAIResponse(
-            //     prompt.join(" "),
-            //     (chunk) => {
-            //         process.stdout.write(chunk);
-            //     }
-            // );
+
             const openkode = createOpenKodeAgent();
-            const response = await openkode.run({
-                prompt: prompt.join(" ")
-            })
+            // const response = await openkode.run({
+            //     prompt: prompt.join(" ")
+            // })
+            // console.log("\n🤖 OpenKode:\n");
+            // console.log(response.response);
+            console.log("\n🤖 OpenKode is thinking....\n");
+            console.log("\n🤖 OpenKode says:\n");
+            
+            await openkode.stream(prompt.join(" "), (chunk) => {
+            process.stdout.write(chunk);
+            });
 
-
-            console.log("\n🤖 OpenKode:\n");
-
-            console.log(response.response);
+            console.log();
 
         });
 }

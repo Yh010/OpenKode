@@ -5,4 +5,4 @@ Set-Location packages/cli
 pnpm link --global
 openkode --version
 openkode --help
-openkode llmcall "what is 2+2"
+openkode "what is 2+2"
