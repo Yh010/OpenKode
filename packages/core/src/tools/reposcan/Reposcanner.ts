@@ -1,3 +1,7 @@
+import { createRepoDependencyGraph } from "./dependency-graph.js";
+import type { RepoDependencyGraph } from "./types.js";
+
+/*
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
@@ -78,3 +82,8 @@ export async function RepoScanner(directory:string): Promise<FolderStructure> {
 // console.dir(directoryTree, {
 //     depth: null
 // });
+*/
+
+export async function RepoScanner(directory: string): Promise<RepoDependencyGraph> {
+    return createRepoDependencyGraph(directory);
+}

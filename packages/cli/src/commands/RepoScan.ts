@@ -15,8 +15,12 @@ export function RepoScan(program: Command) {
 
             const result = await openkode.scan(currWorkDir) ;
 
+            console.log(result.terminal);
+
+            /*
             console.dir(result,{
                 depth: null
             });
+            */
         });
 }
