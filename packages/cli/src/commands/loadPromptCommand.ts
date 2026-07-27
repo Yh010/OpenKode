@@ -20,7 +20,7 @@ export function loadPromptCommand(program: Command) {
             // console.log(response.response);
             console.log("\n🤖 OpenKode is thinking....\n");
             console.log("\n🤖 OpenKode says:\n");
-            const result = await openkode.loop({prompt: prompt.join(" ")}, (chunk) => {
+            const result = await openkode.run({prompt: prompt.join(" ")}, (chunk) => {
                 process.stdout.write(chunk);
             });
 

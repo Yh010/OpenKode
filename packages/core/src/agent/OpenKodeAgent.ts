@@ -38,7 +38,7 @@ export class OpenKodeAgent {
     // }
 
     // packages/core/src/agent/OpenKodeAgent.ts
-    async stream(prompt: AgentRequest, onChunk: (text: string) => void): Promise<{ usage: LLMUsage }> {
+    private async stream(prompt: AgentRequest, onChunk: (text: string) => void): Promise<{ usage: LLMUsage }> {
 
         const userQuery: string = prompt.prompt;
 
@@ -56,7 +56,11 @@ export class OpenKodeAgent {
     }
 
 
-    async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
+    async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
+        return this.loop(prompt, onChunk);
+    }
+
+    private async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
         let maxIterations = 10;
         const tools: Record<string, ToolFunction> = {
             CodeReview: async (argument: string) => {
