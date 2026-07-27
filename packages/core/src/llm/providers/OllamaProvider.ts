@@ -8,7 +8,7 @@ import type { LLMUsage } from "../interface/LLMUsage.js";
 export class OllamaProvider implements LLMProvider {
     async generate(request: LLMRequest): Promise<LLMResponse> {
         const response = await fetch(
-            "http://localhost:11434/api/generate",
+            "http://localhost:11434/api/chat",
             {
                 method: "POST",
                 headers: {
@@ -16,33 +16,36 @@ export class OllamaProvider implements LLMProvider {
                 },
                 body: JSON.stringify({
                     model: "qwen2.5-coder:3b",
-                    prompt: request.prompt,
+                    messages: request.messages,
                     stream: false
                 })
             }
         );
 
+        if (!response.ok) {
+            throw new Error(`Ollama request failed: ${await response.text()}`);
+        }
+
         const data = await response.json();
 
         return {
-            response: data.response
+            response: data.message.content
         };
     }
 
     async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<{usage:LLMUsage}> {
-        const response = await fetch("http://localhost:11434/api/generate", {
+        const response = await fetch("http://localhost:11434/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 model: "qwen2.5-coder:3b",
-                prompt: request.prompt,
+                messages: request.messages,
                 stream: true,
             }),
         });
 
-
         if (!response.ok || !response.body) {
-            throw new Error("Could not start Ollama stream");
+            throw new Error(`Could not start Ollama stream: ${await response.text()}`);
         }
 
         const reader = response.body.getReader();
@@ -62,7 +65,7 @@ export class OllamaProvider implements LLMProvider {
             for (const line of lines) {
                 if (!line.trim()) continue;
                 const chunk = JSON.parse(line) ;
-                if (chunk.response) onChunk(chunk.response);
+                if (chunk.message?.content) onChunk(chunk.message.content);
                 if(chunk.done){
                     usage = {
                         inputTokens: chunk.prompt_eval_count,

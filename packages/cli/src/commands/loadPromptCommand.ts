@@ -1,6 +1,6 @@
 // cli client
 
-import { createOpenKodeAgent } from '@openkode/core';
+import { createOpenKodeAgent, type AgentRequest } from '@openkode/core';
 import { Command } from 'commander';
 
 export function loadPromptCommand(program: Command) {
@@ -20,8 +20,7 @@ export function loadPromptCommand(program: Command) {
             // console.log(response.response);
             console.log("\n🤖 OpenKode is thinking....\n");
             console.log("\n🤖 OpenKode says:\n");
-            
-            const result = await openkode.stream(prompt.join(" "), (chunk) => {
+            const result = await openkode.run({prompt: prompt.join(" ")}, (chunk) => {
                 process.stdout.write(chunk);
             });
 
