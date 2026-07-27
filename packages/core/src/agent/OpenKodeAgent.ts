@@ -55,7 +55,13 @@ export class OpenKodeAgent {
         return response;
     }
 
-
+    /**
+ * Runs the agent until it produces a final answer or reaches its limit.
+ *
+ * @param prompt - The user's request.
+ * @param onChunk - Called whenever Ollama streams new text.
+ * @returns The final response and token usage.
+ */
     async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
         return this.loop(prompt, onChunk);
     }
