@@ -1,9 +1,15 @@
 // Ollama Provider
 
+import type { CoderResponse } from "../../agent/interface/CoderResponsetypes.js";
+import type { OrchestratorResponse } from "../../agent/interface/OrchestratorResponsetypes.js";
+import type { PlannerResponse } from "../../agent/interface/PlannerResponsetype.js";
+import { coderSystemPrompt } from "../../agent/workers/coder/coderSystemPrompt.js";
+import { plannerSystemPrompt } from "../../agent/workers/planner/plannerSystemPrompt.js";
 import type { LLMProvider } from "../interface/LLMProvider.js";
 import type { LLMRequest } from "../interface/LLMRequest.js";
 import type { LLMResponse } from "../interface/LLMResponse.js";
 import type { LLMUsage } from "../interface/LLMUsage.js";
+import type { Message } from "../../agent/interface/Message.js";
 
 export class OllamaProvider implements LLMProvider {
     async generate(request: LLMRequest): Promise<LLMResponse> {
@@ -31,6 +37,88 @@ export class OllamaProvider implements LLMProvider {
         return {
             response: data.message.content
         };
+    }
+
+    //TODO: IMPORTANT: Model should not know what is the response for (orchestrator | planner | coder) => it should only know about llm interface
+
+    async generateForPlanner(request: OrchestratorResponse): Promise<PlannerResponse> {
+
+        const messages: Message[] = [
+            {"role": "system","content":plannerSystemPrompt},
+        ];
+        if(request.type=="delegate"){
+            const task = request.task ;
+            const feedback = request.feedback ;
+
+            messages.push({
+                "role":"user",
+                "content": JSON.stringify({ task, feedback })
+            });
+        }
+        return this.chatForJson<PlannerResponse>("planner", messages);
+    }
+
+    async generateForCoder(request: OrchestratorResponse): Promise<CoderResponse> {
+
+        const messages: Message[] = [
+            {"role": "system","content":coderSystemPrompt},
+        ];
+        if(request.type=="delegate"){
+            const task = request.task ;
+            const feedback = request.feedback ;
+
+            messages.push({
+                "role":"user",
+                "content": JSON.stringify({ task, feedback })
+            });
+        }
+        return this.chatForJson<CoderResponse>("coder", messages);
+    }
+
+    async generateForOrchestrator(request: LLMRequest): Promise<OrchestratorResponse> {
+        return this.chatForJson<OrchestratorResponse>("orchestrator", request.messages);
+    }
+
+    private async chatForJson<T>(role: string, messages: Message[]): Promise<T> {
+        console.log(`[OpenKode][${role}] Calling Ollama with ${messages.length} message(s).`);
+        const response = await fetch(
+            "http://localhost:11434/api/chat",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "qwen2.5-coder:3b",
+                    messages,
+                    stream: false
+                })
+            }
+        );
+
+        if (!response.ok) {
+            const body = await response.text();
+            console.error(`[OpenKode][${role}] Ollama returned HTTP ${response.status}.`, body);
+            throw new Error(`Ollama ${role} request failed: ${body}`);
+        }
+
+        const data = await response.json();
+        const content = data.message?.content;
+        if (typeof content !== "string") {
+            console.error(`[OpenKode][${role}] Ollama response did not contain message.content.`, data);
+            throw new Error(`Ollama ${role} response did not contain message.content`);
+        }
+
+        try {
+            const result = JSON.parse(stripJsonCodeFence(content)) as T;
+            console.log(`[OpenKode][${role}] Received valid JSON response.`);
+            return result;
+        } catch (error) {
+            console.error(`[OpenKode][${role}] Expected JSON but received:`, content);
+            throw new Error(
+                `Ollama ${role} response was not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<{usage:LLMUsage}> {
@@ -84,4 +172,10 @@ export class OllamaProvider implements LLMProvider {
 
         return { usage };
     }
+}
+
+function stripJsonCodeFence(content: string): string {
+    const trimmed = content.trim();
+    const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return match ? match[1]! : trimmed;
 }

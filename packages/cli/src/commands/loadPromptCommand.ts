@@ -20,12 +20,18 @@ export function loadPromptCommand(program: Command) {
             // console.log(response.response);
             console.log("\n🤖 OpenKode is thinking....\n");
             console.log("\n🤖 OpenKode says:\n");
-            const result = await openkode.run({prompt: prompt.join(" ")}, (chunk) => {
-                process.stdout.write(chunk);
-            });
+            try {
+                const result = await openkode.run({prompt: prompt.join(" ")}, (chunk) => {
+                    process.stdout.write(chunk);
+                });
 
-            console.log(`\nInput tokens: ${result.usage.inputTokens}`);
-            console.log(`Output tokens: ${result.usage.outputTokens}`);
+                console.log(result.response);
+                console.log(`\nInput tokens: ${result.usage.inputTokens}`);
+                console.log(`Output tokens: ${result.usage.outputTokens}`);
+            } catch (error) {
+                console.error("\n[OpenKode][cli] Run failed.", error);
+                process.exitCode = 1;
+            }
 
         });
 }
