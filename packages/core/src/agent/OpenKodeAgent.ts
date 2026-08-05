@@ -149,7 +149,7 @@ export class OpenKodeAgent {
     private async loop(prompt: AgentRequest): Promise<LoopResult> {
         const maxSteps = 12;
         const workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }> = [];
-        const orchestrator = createOrchestrator();
+        const orchestrator = createOrchestrator(this.llm);
 
         console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
