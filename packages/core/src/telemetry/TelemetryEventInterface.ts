@@ -1,4 +1,4 @@
-export type TelemetryEventType =
+type TelemetryEventType =
     | "run"
     | "agent_step"
     | "generation"
