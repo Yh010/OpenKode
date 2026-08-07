@@ -18,6 +18,5 @@ export class TelemetryApiClient{
             throw new Error(`Export Request failed: ${response.status}`);
         }
 
-        //where to store this exporter's failure logs?? like when an export fails, how will we debug?
     }   
 }
