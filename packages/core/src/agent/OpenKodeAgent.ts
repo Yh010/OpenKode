@@ -212,6 +212,14 @@ export class OpenKodeAgent {
     async scan(pwd: string) {
         return RepoScanner(pwd);
     }
+
+    async shutdown(){
+        try {
+            await this.telemetry.shutdown();
+        } catch (error) {
+            console.error("[OpenKode][telemetry] Shutdown failed", error);
+        }
+    }
 }
 
 function emptyUsage(): LLMUsage {

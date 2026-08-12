@@ -143,4 +143,8 @@ export class ConsoleTelemetry implements TelemetryInterface{
             throw err ;
         }
     }
+
+    async shutdown():Promise<void> {
+        await this.exporter?.shutdown() ;
+    }
 }

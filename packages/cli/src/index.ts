@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "dotenv/config";
 import { Command } from 'commander';
 import { loadCommands } from './commands/index.js';
 //import { loadCommands } from './commands/llmcall.js';
