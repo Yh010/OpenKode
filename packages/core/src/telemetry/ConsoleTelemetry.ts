@@ -2,10 +2,25 @@ import { AsyncLocalStorage } from "async_hooks";
 import type { TelemetryInterface } from "./TelemetryInterface.js";
 import { randomUUID } from 'crypto';
 import type { TraceContext } from "./TraceContext.js";
+import type { SpanType, TelemetryEventInterface, TelemetryEventType } from "./TelemetryEventInterface.js";
+import type { TelemetryExporterInterface } from "./TelemetryExporterInterface.js";
 
 export class ConsoleTelemetry implements TelemetryInterface{
+
+    constructor(private readonly exporter?: TelemetryExporterInterface){}
     
     private readonly contextStorage = new AsyncLocalStorage<TraceContext>() ;
+
+    private emitEventSafely(event: TelemetryEventInterface): void {
+        try {
+            this.exporter?.emit(event);
+        } catch (error) {
+            console.error(
+                "[OpenKode][telemetry] Failed to queue telemetry event.",
+                error,
+            );
+        }
+    }
 
     async withRun<T>(name: string, operation: () => Promise<T>): Promise<T> {
         const runId: string = "run"+randomUUID();
@@ -21,40 +36,50 @@ export class ConsoleTelemetry implements TelemetryInterface{
             runId,
             spanId: rootSpanId,
         });
-        const startTime = Date.now() ;
+        const startTime = new Date() ;
 
         try{
             const resp = await this.contextStorage.run(rootContext,operation) ;
-            const endTime = Date.now() ;
-            const timeTaken = endTime-startTime ;
-            const obj = {
-                event: "span_finished",
+            const endTime = new Date() ;
+            //const timeTaken = endTime-startTime ;
+            const obj:TelemetryEventInterface = {
+                type: "run",
                 name: name,
+                eventId: `event-${randomUUID()}`,
                 runId: runId,
                 spanId:rootSpanId,
-                durationMs: timeTaken,
-                msg: `${name} Span ended with rootId: ${runId} and rootSpanId: ${rootSpanId} time taken: ${timeTaken}`,
+                startedAt: startTime.toISOString(),
+                endedAt:endTime.toISOString(),
+                //msg: `${name} Span ended with rootId: ${runId} and rootSpanId: ${rootSpanId} time taken: ${timeTaken}`,
                 status: "ok"
             }
             console.log(obj);
+            this.emitEventSafely(obj) ;
             return resp ;
 
         }catch(err){
-            console.log({
-                event: "span_finished",
+            const endTime = new Date() ;
+            const obj : TelemetryEventInterface = {
+                type:"run",
+                eventId: `event-${randomUUID()}`,
                 name,
                 runId,
                 spanId: rootSpanId,
-                durationMs: Date.now() - startTime,
+                startedAt: startTime.toISOString(),
+                endedAt: endTime.toISOString(),
                 status: "error",
-                error: err instanceof Error ? err.message : String(err),
-            });
+                metadata:{
+                    error: err instanceof Error ? err.message : String(err),
+                },
+            }
+            this.emitEventSafely(obj)
+            console.log(obj);
             throw err ;
         }
 
     }
 
-    async withSpan<T>(name: string, operation: () => Promise<T>): Promise<T> {
+    async withSpan<T>(type:TelemetryEventType, name: SpanType, operation: () => Promise<T>): Promise<T> {
         const parentContext = this.contextStorage.getStore();
 
         if (!parentContext) {
@@ -76,36 +101,45 @@ export class ConsoleTelemetry implements TelemetryInterface{
             spanId: childContext.spanId,
             parentSpanId: childContext.parentSpanId
         });
-        const startTime = Date.now() ;
+        const startTime = new Date() ;
 
          try{
             const resp = await this.contextStorage.run(childContext,operation) ;
-            const endTime = Date.now() ;
-            const timeTaken = endTime-startTime ;
-            const obj = {
-                event: "span_finished",
+            const endTime = new Date() ;
+            //const timeTaken = endTime-startTime ;
+            const obj:TelemetryEventInterface = {
+                type,
                 name: name,
+                eventId: `event-${randomUUID()}`,
                 runId: childContext.runId,
                 spanId:childContext.spanId,
-                parentSpanId: childContext.parentSpanId,
-                durationMs: timeTaken,
-                msg: `${name} Span ended with rootId: ${childContext.runId} and spanId: ${childContext.spanId}, parentSpanId: ${childContext.parentSpanId}, time taken: ${timeTaken}`,
+                ...(childContext.parentSpanId? {parentSpanId: childContext.parentSpanId}:{}),
+                startedAt: startTime.toISOString(),
+                endedAt:endTime.toISOString(),
                 status: "ok"
             }
             console.log(obj);
+            this.emitEventSafely(obj)
             return resp ;
 
         }catch(err){
-            console.log({
-                event: "span_finished",
+            const endTime = new Date() ;
+            const obj : TelemetryEventInterface = {
+                type,
+                eventId: `event-${randomUUID()}`,
                 name,
-                runId: childContext.runId,
+                runId:childContext.runId,
                 spanId: childContext.spanId,
-                parentSpanId: childContext.parentSpanId,
-                durationMs: Date.now() - startTime,
+                ...(childContext.parentSpanId? {parentSpanId: childContext.parentSpanId}:{}),
+                startedAt: startTime.toISOString(),
+                endedAt: endTime.toISOString(),
                 status: "error",
-                error: err instanceof Error ? err.message : String(err),
-            });
+                metadata:{
+                    error: err instanceof Error ? err.message : String(err),
+                },
+            }
+            this.emitEventSafely(obj)
+            console.log(obj);
             throw err ;
         }
     }
