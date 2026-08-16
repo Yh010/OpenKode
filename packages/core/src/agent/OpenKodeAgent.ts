@@ -1,5 +1,7 @@
 import type { LLMProvider } from "../llm/interface/LLMProvider.js";
 import type { LLMUsage } from "../llm/interface/LLMUsage.js";
+import { SpanType } from "../telemetry/TelemetryEventInterface.js";
+import type { TelemetryInterface } from "../telemetry/TelemetryInterface.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
 import type { AgentRequest } from "./interface/AgentRequest.js";
 import type { AgentResponse } from "./interface/AgentResponse.js";
@@ -20,7 +22,7 @@ interface LoopResult {
 }
 
 export class OpenKodeAgent {
-    constructor(private readonly llm: LLMProvider) { }
+    constructor(private readonly llm: LLMProvider, private readonly telemetry: TelemetryInterface) { }
 
     // async run(agentRequest: AgentRequest): Promise<AgentResponse> {
 
@@ -43,7 +45,7 @@ export class OpenKodeAgent {
  * @returns The final response and token usage.
  */
     async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
-        return this.loop(prompt);
+        return this.telemetry.withRun("openKode-run",()=> this.loop(prompt)) ;
     }
 
     // private async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
@@ -148,7 +150,7 @@ export class OpenKodeAgent {
     private async loop(prompt: AgentRequest): Promise<LoopResult> {
         const maxSteps = 12;
         const workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }> = [];
-        const orchestrator = createOrchestrator();
+        const orchestrator = createOrchestrator(this.llm);
 
         console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
@@ -164,7 +166,7 @@ export class OpenKodeAgent {
 
             let orchestratorResp: OrchestratorResponse;
             try {
-                orchestratorResp = await orchestrator.run({ messages });
+                orchestratorResp = await this.telemetry.withSpan("agent_step",SpanType.ORCHESTRATOR_RUN,()=> orchestrator.run({ messages }));
             } catch (error) {
                 console.error(`[OpenKode][orchestration] Orchestrator failed at step ${step}.`, error);
                 throw error;
@@ -181,13 +183,13 @@ export class OpenKodeAgent {
             try {
                 if (orchestratorResp.agent === "planner") {
                     const planner = new PlannerAgent(this.llm);
-                    const result = await planner.run(orchestratorResp);
+                    const result = await this.telemetry.withSpan("agent_step",SpanType.PLANNER_RUN, () => planner.run(orchestratorResp)) ;
                     workerResults.push({ worker: "planner", result });
                     console.log(`[OpenKode][planner] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
                 } else {
                     const coder = new CoderAgent(this.llm);
-                    const result = await coder.run(orchestratorResp);
+                    const result = await this.telemetry.withSpan("agent_step",SpanType.CODER_RUN,()=> coder.run(orchestratorResp));
                     workerResults.push({ worker: "coder", result });
                     console.log(`[OpenKode][coder] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
@@ -209,6 +211,14 @@ export class OpenKodeAgent {
 
     async scan(pwd: string) {
         return RepoScanner(pwd);
+    }
+
+    async shutdown(){
+        try {
+            await this.telemetry.shutdown();
+        } catch (error) {
+            console.error("[OpenKode][telemetry] Shutdown failed", error);
+        }
     }
 }
 

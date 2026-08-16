@@ -31,6 +31,8 @@ export function loadPromptCommand(program: Command) {
             } catch (error) {
                 console.error("\n[OpenKode][cli] Run failed.", error);
                 process.exitCode = 1;
+            } finally{
+                await openkode.shutdown();
             }
 
         });

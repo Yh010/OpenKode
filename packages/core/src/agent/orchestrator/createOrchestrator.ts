@@ -1,7 +1,6 @@
-import { OllamaProvider } from "../../llm/providers/OllamaProvider.js";
+import type { LLMProvider } from "../../llm/interface/LLMProvider.js";
 import { Orchestrator } from "./OrchestratorClass.js";
 
-export function createOrchestrator(){
-    const llm = new OllamaProvider() ; //TODO: LLM Should be different
+export function createOrchestrator(llm: LLMProvider){
     return new Orchestrator(llm) ;
 }

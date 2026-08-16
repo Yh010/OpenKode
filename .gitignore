@@ -4,3 +4,7 @@ dist/
 outputs
 assets
 docs
+.cache/
+.codex
+TELEMETRY_EXPORTER_NORTH_STAR.md
+.env
