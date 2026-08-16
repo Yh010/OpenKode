@@ -22,6 +22,22 @@ export class ConsoleTelemetry implements TelemetryInterface{
         }
     }
 
+    private createMetadataSafely<T>(
+        metadataFactory: ((result: T) => Record<string, unknown> | undefined) | undefined,
+        result: T,
+    ): Record<string, unknown> | undefined {
+        if (!metadataFactory) {
+            return undefined;
+        }
+
+        try {
+            return metadataFactory(result);
+        } catch (error) {
+            console.error("[OpenKode][telemetry] Failed to create telemetry metadata.", error);
+            return undefined;
+        }
+    }
+
     async withRun<T>(name: string, operation: () => Promise<T>): Promise<T> {
         const runId: string = "run"+randomUUID();
         const rootSpanId: string = "rootSpan" + randomUUID() ;
@@ -79,7 +95,12 @@ export class ConsoleTelemetry implements TelemetryInterface{
 
     }
 
-    async withSpan<T>(type:TelemetryEventType, name: SpanType, operation: () => Promise<T>): Promise<T> {
+    async withSpan<T>(
+        type:TelemetryEventType,
+        name: SpanType,
+        operation: () => Promise<T>,
+        metadataFactory?: (result: T) => Record<string, unknown> | undefined,
+    ): Promise<T> {
         const parentContext = this.contextStorage.getStore();
 
         if (!parentContext) {
@@ -106,6 +127,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
          try{
             const resp = await this.contextStorage.run(childContext,operation) ;
             const endTime = new Date() ;
+            const metadata = this.createMetadataSafely(metadataFactory, resp);
             //const timeTaken = endTime-startTime ;
             const obj:TelemetryEventInterface = {
                 type,
@@ -116,7 +138,8 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 ...(childContext.parentSpanId? {parentSpanId: childContext.parentSpanId}:{}),
                 startedAt: startTime.toISOString(),
                 endedAt:endTime.toISOString(),
-                status: "ok"
+                status: "ok",
+                ...(metadata ? { metadata } : {}),
             }
             console.log(obj);
             this.emitEventSafely(obj)

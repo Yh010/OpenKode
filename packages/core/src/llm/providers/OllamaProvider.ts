@@ -3,13 +3,12 @@
 import type { CoderResponse } from "../../agent/interface/CoderResponsetypes.js";
 import type { OrchestratorResponse } from "../../agent/interface/OrchestratorResponsetypes.js";
 import type { PlannerResponse } from "../../agent/interface/PlannerResponsetype.js";
-import { coderSystemPrompt } from "../../agent/workers/coder/coderSystemPrompt.js";
-import { plannerSystemPrompt } from "../../agent/workers/planner/plannerSystemPrompt.js";
 import type { LLMProvider } from "../interface/LLMProvider.js";
 import type { LLMRequest } from "../interface/LLMRequest.js";
 import type { LLMResponse } from "../interface/LLMResponse.js";
 import type { LLMUsage } from "../interface/LLMUsage.js";
 import type { Message } from "../../agent/interface/Message.js";
+import { createCoderMessages, createPlannerMessages } from "../prompts/workerMessages.js";
 
 export class OllamaProvider implements LLMProvider {
     async generate(request: LLMRequest): Promise<LLMResponse> {
@@ -43,36 +42,12 @@ export class OllamaProvider implements LLMProvider {
 
     async generateForPlanner(request: OrchestratorResponse): Promise<PlannerResponse> {
 
-        const messages: Message[] = [
-            {"role": "system","content":plannerSystemPrompt},
-        ];
-        if(request.type=="delegate"){
-            const task = request.task ;
-            const feedback = request.feedback ;
-
-            messages.push({
-                "role":"user",
-                "content": JSON.stringify({ task, feedback })
-            });
-        }
-        return this.chatForJson<PlannerResponse>("planner", messages);
+        return this.chatForJson<PlannerResponse>("planner", createPlannerMessages(request));
     }
 
     async generateForCoder(request: OrchestratorResponse): Promise<CoderResponse> {
 
-        const messages: Message[] = [
-            {"role": "system","content":coderSystemPrompt},
-        ];
-        if(request.type=="delegate"){
-            const task = request.task ;
-            const feedback = request.feedback ;
-
-            messages.push({
-                "role":"user",
-                "content": JSON.stringify({ task, feedback })
-            });
-        }
-        return this.chatForJson<CoderResponse>("coder", messages);
+        return this.chatForJson<CoderResponse>("coder", createCoderMessages(request));
     }
 
     async generateForOrchestrator(request: LLMRequest): Promise<OrchestratorResponse> {
