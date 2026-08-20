@@ -7,8 +7,8 @@ import type { AgentRequest } from "./interface/AgentRequest.js";
 import type { AgentResponse } from "./interface/AgentResponse.js";
 import type { CoderResponse } from "./interface/CoderResponsetypes.js";
 import type { Message } from "./interface/Message.js";
-import type { OrchestratorResponse } from "./interface/OrchestratorResponsetypes.js";
-import type { PlannerResponse } from "./interface/PlannerResponsetype.js";
+import type { Delegate, OrchestratorResponse, WorkerContext } from "./interface/OrchestratorResponsetypes.js";
+import type { Plan, PlannerResponse } from "./interface/PlannerResponsetype.js";
 import { createOrchestrator } from "./orchestrator/createOrchestrator.js";
 import { systemPrompt as orchestratorSystemPrompt } from "./orchestrator/systemPrompt.js";
 import { CoderAgent } from "./workers/coder/coderAgent.js";
@@ -151,6 +151,9 @@ export class OpenKodeAgent {
         const maxSteps = 12;
         const workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }> = [];
         const orchestrator = createOrchestrator(this.llm);
+        let repositoryFiles: string[] | undefined;
+        let approvedPlan: Plan | undefined;
+        const requestedNewFiles = extractRequestedFilePaths(prompt.prompt);
 
         console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
@@ -181,15 +184,66 @@ export class OpenKodeAgent {
 
             console.log(`[OpenKode][orchestration] Delegating to ${orchestratorResp.agent}.`);
             try {
-                if (orchestratorResp.agent === "planner") {
+                if (orchestratorResp.agent === "planner" || !approvedPlan) {
+                    const repoFiles = repositoryFiles ?? await this.getRepositoryFiles();
+                    repositoryFiles = repoFiles;
+                    const plannerTask: Delegate = orchestratorResp.agent === "planner"
+                        ? orchestratorResp
+                        : {
+                            ...orchestratorResp,
+                            agent: "planner",
+                            feedback: `Create a plan before coding. ${orchestratorResp.feedback ?? ""}`.trim(),
+                        };
+                    const task = this.withWorkerContext(plannerTask, {
+                        originalRequest: prompt.prompt,
+                        repositoryFiles: repoFiles,
+                        requestedNewFiles,
+                    });
                     const planner = new PlannerAgent(this.llm);
-                    const result = await this.telemetry.withSpan("agent_step",SpanType.PLANNER_RUN, () => planner.run(orchestratorResp)) ;
+                    const result = await this.telemetry.withSpan("agent_step",SpanType.PLANNER_RUN, () => planner.run(task)) ;
+                    if (result.type === "needs_context") {
+                        return { response: formatQuestions(result.questions), usage: emptyUsage() };
+                    }
+
+                    const invalidPaths = result.steps.flatMap((step) => step.files)
+                        .filter((file) => !repoFiles.includes(file) && !requestedNewFiles.includes(file));
+                    if (invalidPaths.length > 0) {
+                        return {
+                            response: `Cannot continue: the plan references files that are not in the repository: ${[...new Set(invalidPaths)].join(", ")}.`,
+                            usage: emptyUsage(),
+                        };
+                    }
+
+                    approvedPlan = result;
                     workerResults.push({ worker: "planner", result });
                     console.log(`[OpenKode][planner] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
                 } else {
+                    const repoFiles = repositoryFiles ?? await this.getRepositoryFiles();
+                    repositoryFiles = repoFiles;
+                    const approvedFiles = [...new Set(approvedPlan.steps.flatMap((step) => step.files))];
+                    const task = this.withWorkerContext(orchestratorResp, {
+                        originalRequest: prompt.prompt,
+                        repositoryFiles: repoFiles,
+                        approvedFiles,
+                        sourceFiles: await this.readApprovedFiles(approvedFiles.filter((file) => repoFiles.includes(file))),
+                        requestedNewFiles,
+                    });
                     const coder = new CoderAgent(this.llm);
-                    const result = await this.telemetry.withSpan("agent_step",SpanType.CODER_RUN,()=> coder.run(orchestratorResp));
+                    const result = await this.telemetry.withSpan("agent_step",SpanType.CODER_RUN,()=> coder.run(task));
+                    if (result.type === "needs_context") {
+                        return { response: formatQuestions(result.questions), usage: emptyUsage() };
+                    }
+
+                    const invalidPaths = result.changes.map((change) => change.path)
+                        .filter((file) => !approvedFiles.includes(file));
+                    if (invalidPaths.length > 0) {
+                        return {
+                            response: `Cannot continue: the proposal modifies unapproved files: ${[...new Set(invalidPaths)].join(", ")}.`,
+                            usage: emptyUsage(),
+                        };
+                    }
+
                     workerResults.push({ worker: "coder", result });
                     console.log(`[OpenKode][coder] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
@@ -213,6 +267,25 @@ export class OpenKodeAgent {
         return RepoScanner(pwd);
     }
 
+    private async getRepositoryFiles(): Promise<string[]> {
+        const root = process.cwd();
+        const graph = await RepoScanner(root);
+        return graph.nodes.map((node) => toRepositoryPath(root, node.path));
+    }
+
+    private async readApprovedFiles(files: string[]): Promise<Record<string, string>> {
+        const root = process.cwd();
+        const entries = await Promise.all(files.map(async (file) => [
+            file,
+            await readFile(path.join(root, file), "utf8"),
+        ] as const));
+        return Object.fromEntries(entries);
+    }
+
+    private withWorkerContext(task: Delegate, context: WorkerContext): Delegate {
+        return { ...task, context };
+    }
+
     async shutdown(){
         try {
             await this.telemetry.shutdown();
@@ -220,6 +293,21 @@ export class OpenKodeAgent {
             console.error("[OpenKode][telemetry] Shutdown failed", error);
         }
     }
+}
+
+function toRepositoryPath(root: string, file: string): string {
+    return path.relative(root, file).replaceAll("\\", "/");
+}
+
+function formatQuestions(questions: string[]): string {
+    return `I need more context before continuing:\n${questions.map((question) => `- ${question}`).join("\n")}`;
+}
+
+function extractRequestedFilePaths(request: string): string[] {
+    return [...new Set(
+        [...request.matchAll(/\b[\w.-]+\.(?:[cm]?[jt]sx?|json|css|html|md)\b/gi)]
+            .map((match) => match[0]),
+    )];
 }
 
 function emptyUsage(): LLMUsage {
@@ -231,3 +319,5 @@ function emptyUsage(): LLMUsage {
         evalDurationNs: 0,
     };
 }
+import { readFile } from "node:fs/promises";
+import path from "node:path";

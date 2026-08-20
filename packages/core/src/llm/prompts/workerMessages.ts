@@ -19,7 +19,11 @@ function createWorkerMessages(systemPrompt: string, request: OrchestratorRespons
     if (request.type === "delegate") {
         messages.push({
             role: "user",
-            content: JSON.stringify({ task: request.task, feedback: request.feedback }),
+            content: JSON.stringify({
+                task: request.task,
+                feedback: request.feedback ?? "",
+                context: request.context,
+            }),
         });
     }
 

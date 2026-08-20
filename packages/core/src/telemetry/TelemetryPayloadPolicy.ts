@@ -13,6 +13,11 @@ export interface StreamCapture {
     getValue(): { value: string; truncated: boolean };
 }
 
+interface TelemetryMessage {
+    role: string;
+    content: string;
+}
+
 export class TelemetryPayloadPolicy {
     readonly captureLlmContent: boolean;
     readonly maxContentChars: number;
@@ -32,17 +37,22 @@ export class TelemetryPayloadPolicy {
         });
     }
 
-    generationMetadata(input: unknown, output: unknown, streamOutputTruncated = false): Record<string, unknown> | undefined {
+    generationMetadata(
+        input: { messages: TelemetryMessage[] },
+        output: unknown,
+        streamOutputTruncated = false,
+    ): Record<string, unknown> | undefined {
         if (!this.captureLlmContent) {
             return undefined;
         }
 
-        const capturedInput = this.capture(input);
+        const capturedInput = this.captureMessages(input.messages);
         const capturedOutput = this.capture(output);
 
         return {
             llm: {
-                input: capturedInput.value,
+                inputMessages: capturedInput.value,
+                inputMessageCount: input.messages.length,
                 output: capturedOutput.value,
                 inputTruncated: capturedInput.truncated,
                 outputTruncated: capturedOutput.truncated || streamOutputTruncated,
@@ -83,6 +93,29 @@ export class TelemetryPayloadPolicy {
             value: `${redacted.slice(0, this.maxContentChars)}…[truncated]`,
             truncated: true,
         };
+    }
+
+    private captureMessages(messages: TelemetryMessage[]): {
+        value: TelemetryMessage[];
+        truncated: boolean;
+    } {
+        let remaining = this.maxContentChars;
+        let truncated = false;
+
+        const value = messages.map((message) => {
+            const content = redactSensitiveText(message.content);
+            if (content.length <= remaining) {
+                remaining -= content.length;
+                return { role: message.role, content };
+            }
+
+            const capturedContent = `${content.slice(0, Math.max(remaining, 0))}…[truncated]`;
+            remaining = 0;
+            truncated = true;
+            return { role: message.role, content: capturedContent };
+        });
+
+        return { value, truncated };
     }
 }
 

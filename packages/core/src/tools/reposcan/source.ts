@@ -97,7 +97,7 @@ export function resolveSourceFile(candidate: string): string | undefined {
 		: candidate;
 	const candidates = [
 		candidate,
-		...sourceExtensions.values().map((extension) => `${extensionlessCandidate}${extension}`),
+		...[...sourceExtensions].map((extension) => `${extensionlessCandidate}${extension}`),
 		...entryFileBasenames.map((name) => path.join(candidate, name)),
 	];
 
