@@ -1,0 +1,16 @@
+export type ToolErrorCode =
+    | "INVALID_PATH"
+    | "NOT_FOUND"
+    | "NOT_A_FILE"
+    | "PERMISSION_DENIED"
+    | "READ_FAILED";
+
+export type ToolResult =
+    | { ok: true; output: string }
+    | { ok: false; code: ToolErrorCode; message: string };
+
+export interface Tool{
+    name: string;
+    description: string;
+    execute: (input: string) => Promise<ToolResult>;
+}
