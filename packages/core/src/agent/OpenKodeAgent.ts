@@ -199,7 +199,7 @@ export class OpenKodeAgent {
                     const toolResult = JSON.stringify(resp) ;
                     messages.push({
                         role: "user",
-                        content: `Observation from ${orchestratorResp.toolName}:\n${JSON.stringify(toolResult)}`,
+                        content: `Observation from ${orchestratorResp.toolName}:\n${toolResult}`,
                     });
 
                 }catch(err){
