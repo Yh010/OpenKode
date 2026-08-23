@@ -2,8 +2,8 @@ import { readFile, stat } from "node:fs/promises";
 import { resolveProjectPath } from "../resolveProjectPath.js";
 import type { Tool, ToolResult } from "../interface/Tool.js";
 
-export class ReadTool implements Tool {
-    readonly name = "Read";
+export class ReadFileTool implements Tool {
+    readonly name = "ReadFileTool";
     readonly description = "Read the UTF-8 contents of a file inside the current project.";
 
     constructor(private readonly projectRoot: string) {}

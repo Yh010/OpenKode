@@ -2,6 +2,7 @@ import type { LLMProvider } from "../llm/interface/LLMProvider.js";
 import type { LLMUsage } from "../llm/interface/LLMUsage.js";
 import { SpanType } from "../telemetry/TelemetryEventInterface.js";
 import type { TelemetryInterface } from "../telemetry/TelemetryInterface.js";
+import { ReadFileTool } from "../tools/read/ReadFileTool.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
 import type { AgentRequest } from "./interface/AgentRequest.js";
 import type { AgentResponse } from "./interface/AgentResponse.js";
@@ -13,7 +14,9 @@ import { createOrchestrator } from "./orchestrator/createOrchestrator.js";
 import { systemPrompt as orchestratorSystemPrompt } from "./orchestrator/systemPrompt.js";
 import { CoderAgent } from "./workers/coder/coderAgent.js";
 import { PlannerAgent } from "./workers/planner/PlannerAgent.js";
-
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { ToolResult } from "../tools/interface/Tool.js";
 //type ToolFunction = (argument: string) => Promise<string> | string;
 
 interface LoopResult {
@@ -149,7 +152,7 @@ export class OpenKodeAgent {
 
     private async loop(prompt: AgentRequest): Promise<LoopResult> {
         const maxSteps = 12;
-        const workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }> = [];
+        const workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }> = []; //TODO: Remove this since it's of no use
         const orchestrator = createOrchestrator(this.llm);
         let repositoryFiles: string[] | undefined;
         let approvedPlan: Plan | undefined;
@@ -157,9 +160,7 @@ export class OpenKodeAgent {
 
         console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
-        for (let step = 1; step <= maxSteps; step++) {
-            console.log(`[OpenKode][orchestration] Step ${step}/${maxSteps}: requesting a decision.`);
-            const messages: Message[] = [
+          const messages: Message[] = [
                 { role: "system", content: orchestratorSystemPrompt },
                 {
                     role: "user",
@@ -167,6 +168,9 @@ export class OpenKodeAgent {
                 },
             ];
 
+        for (let step = 1; step <= maxSteps; step++) {
+            console.log(`[OpenKode][orchestration] Step ${step}/${maxSteps}: requesting a decision.`);
+          
             let orchestratorResp: OrchestratorResponse;
             try {
                 orchestratorResp = await this.telemetry.withSpan("agent_step",SpanType.ORCHESTRATOR_RUN,()=> orchestrator.run({ messages }));
@@ -180,6 +184,30 @@ export class OpenKodeAgent {
             if (orchestratorResp.type === "final") {
                 console.log(`[OpenKode][orchestration] Finished at step ${step}.`);
                 return { response: orchestratorResp.answer, usage: emptyUsage() };
+            }
+
+            if (orchestratorResp.type === "tool_call") {
+                console.log(`[OpenKode][orchestration] calling ${orchestratorResp.toolName} with ${orchestratorResp.fileToRead} file`);
+                messages.push({
+                    role: "assistant",
+                    content: JSON.stringify(orchestratorResp),
+                });
+                try{
+                    const projectRoot = process.cwd();
+                    let readfiletool = new ReadFileTool(projectRoot) ;
+                    const resp: ToolResult = await readfiletool.execute(orchestratorResp.fileToRead) ;
+                    const toolResult = JSON.stringify(resp) ;
+                    messages.push({
+                        role: "user",
+                        content: `Observation from ${orchestratorResp.toolName}:\n${JSON.stringify(toolResult)}`,
+                    });
+
+                }catch(err){
+                    console.log(`error reading file ${orchestratorResp.fileToRead}:`) ;
+                    console.log(err) ;
+                }
+
+                continue ;
             }
 
             console.log(`[OpenKode][orchestration] Delegating to ${orchestratorResp.agent}.`);
@@ -216,6 +244,10 @@ export class OpenKodeAgent {
 
                     approvedPlan = result;
                     workerResults.push({ worker: "planner", result });
+                    messages.push({
+                        role: "user",
+                        content: `Planner result:\n${JSON.stringify(result)}`,
+                    });
                     console.log(`[OpenKode][planner] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
                 } else {
@@ -245,6 +277,10 @@ export class OpenKodeAgent {
                     }
 
                     workerResults.push({ worker: "coder", result });
+                    messages.push({
+                        role: "user",
+                        content: `Coder result:\n${JSON.stringify(result)}`,
+                    });
                     console.log(`[OpenKode][coder] Completed with result type "${result.type}".`);
                     console.dir(result, { depth: null });
                 }
@@ -319,5 +355,4 @@ function emptyUsage(): LLMUsage {
         evalDurationNs: 0,
     };
 }
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+

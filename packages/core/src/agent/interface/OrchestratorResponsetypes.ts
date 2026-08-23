@@ -14,6 +14,12 @@ export interface Delegate{
     context?: WorkerContext,
 }
 
+export interface ToolCall{
+    type: "tool_call",
+    toolName: "ReadFileTool",
+    fileToRead: string
+}
+
 
 interface Final{
     type:"final",
@@ -21,4 +27,4 @@ interface Final{
 }
 
 
-export type OrchestratorResponse = Delegate | Final ;
+export type OrchestratorResponse = Delegate | Final | ToolCall;
