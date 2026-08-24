@@ -4,6 +4,7 @@ import { SpanType } from "../telemetry/TelemetryEventInterface.js";
 import type { TelemetryInterface } from "../telemetry/TelemetryInterface.js";
 import { ReadFileTool } from "../tools/read/ReadFileTool.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
+import { WriteFileTool } from "../tools/write/WriteFileTool.js";
 import type { AgentRequest } from "./interface/AgentRequest.js";
 import type { AgentResponse } from "./interface/AgentResponse.js";
 import type { CoderResponse } from "./interface/CoderResponsetypes.js";
@@ -187,15 +188,18 @@ export class OpenKodeAgent {
             }
 
             if (orchestratorResp.type === "tool_call") {
-                console.log(`[OpenKode][orchestration] calling ${orchestratorResp.toolName} with ${orchestratorResp.fileToRead} file`);
                 messages.push({
                     role: "assistant",
                     content: JSON.stringify(orchestratorResp),
                 });
                 try{
                     const projectRoot = process.cwd();
-                    let readfiletool = new ReadFileTool(projectRoot) ;
-                    const resp: ToolResult = await readfiletool.execute(orchestratorResp.fileToRead) ;
+                    const resp: ToolResult = orchestratorResp.toolName === "ReadFileTool"
+                        ? await new ReadFileTool(projectRoot).execute(orchestratorResp.fileToRead)
+                        : await new WriteFileTool(projectRoot).execute(JSON.stringify({
+                            path: orchestratorResp.fileToWrite,
+                            content: orchestratorResp.content,
+                        }));
                     const toolResult = JSON.stringify(resp) ;
                     messages.push({
                         role: "user",
@@ -203,7 +207,7 @@ export class OpenKodeAgent {
                     });
 
                 }catch(err){
-                    console.log(`error reading file ${orchestratorResp.fileToRead}:`) ;
+                    console.log(`error calling ${orchestratorResp.toolName}:`) ;
                     console.log(err) ;
                 }
 

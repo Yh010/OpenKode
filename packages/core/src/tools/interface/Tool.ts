@@ -1,9 +1,11 @@
 export type ToolErrorCode =
+    | "INVALID_INPUT"
     | "INVALID_PATH"
     | "NOT_FOUND"
     | "NOT_A_FILE"
     | "PERMISSION_DENIED"
-    | "READ_FAILED";
+    | "READ_FAILED"
+    | "WRITE_FAILED";
 
 export type ToolResult =
     | { ok: true; output: string }

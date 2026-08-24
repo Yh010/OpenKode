@@ -14,12 +14,20 @@ export interface Delegate{
     context?: WorkerContext,
 }
 
-export interface ToolCall{
+export interface ReadToolCall {
     type: "tool_call",
     toolName: "ReadFileTool",
     fileToRead: string
 }
 
+export interface WriteToolCall {
+    type: "tool_call",
+    toolName: "WriteFileTool",
+    fileToWrite: string,
+    content: string,
+}
+
+export type ToolCall = ReadToolCall | WriteToolCall;
 
 interface Final{
     type:"final",
