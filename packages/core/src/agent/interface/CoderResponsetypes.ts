@@ -1,13 +1,23 @@
-interface Change{
-    "path": string,
-    "reason": string,
-    "unifiedDiff": string
+export interface EditToolCall {
+  "type": "tool_call",
+  "toolName": "EditFileTool",
+  "path": string,
+  "oldText": string,
+  "newText": string
 }
 
-export interface Proposal{
-  "type": "proposed_change",
+export interface WriteToolCall {
+  "type": "tool_call",
+  "toolName": "WriteFileTool",
+  "path": string,
+  "content": string
+}
+
+export type CoderToolCall = EditToolCall | WriteToolCall;
+
+export interface CoderCompleted {
+  "type": "completed",
   "summary": string,
-  "changes": Change[],
   "verification": string[],
   "risks": string[]
 }
@@ -22,4 +32,9 @@ export interface CoderNeedContext{
   "questions": string[]
 }
 
-export type CoderResponse = Proposal | CoderNeedContext ;
+export interface CoderInvalidResponse {
+  "type": "invalid_response",
+  "message": string
+}
+
+export type CoderResponse = CoderToolCall | CoderCompleted | CoderNeedContext | CoderInvalidResponse ;

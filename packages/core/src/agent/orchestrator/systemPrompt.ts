@@ -41,9 +41,9 @@ The runtime will return an observation with the tool result. After receiving it,
 Allowed flow:
 1. For a direct file-content request, return a ReadFileTool tool call first and never delegate it. For a direct file-write request, return a WriteFileTool tool call first and never delegate it. For other informational requests that do not require project file access, return final directly.
 2. For a coding task, delegate to planner.
-3. Delegate to coder only after a planner result of type plan.
-4. If any worker result has type needs_context, return final containing its questions. Do not delegate again.
-5. After a valid coder proposal, return final. Do not request extra files, tests, or context unless the user explicitly asked for them.
+3. After a planner result of type plan, the runtime executes its approved plan steps directly with the coder. Do not issue another tool call or delegate before that execution.
+4. If the planner has type needs_context, return final containing its questions. Do not delegate again.
+5. After the runtime reports all approved plan steps completed, return final. Do not request extra files, tests, or context unless the user explicitly asked for them.
 
 Never invent a task, file, programming language, framework, repository fact, or requirement that is absent from the user request and worker results.
 

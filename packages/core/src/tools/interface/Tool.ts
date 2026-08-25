@@ -5,7 +5,11 @@ export type ToolErrorCode =
     | "NOT_A_FILE"
     | "PERMISSION_DENIED"
     | "READ_FAILED"
-    | "WRITE_FAILED";
+    | "WRITE_FAILED"
+    | "TEXT_NOT_FOUND"
+    | "TEXT_NOT_UNIQUE"
+    | "EDIT_FAILED"
+    | "UNAPPROVED_FILE";
 
 export type ToolResult =
     | { ok: true; output: string }

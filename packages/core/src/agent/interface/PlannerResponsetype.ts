@@ -1,4 +1,4 @@
-interface Step{
+export interface PlanStep{
     id: string,
     description: string,
     files: string[],
@@ -8,7 +8,7 @@ interface Step{
 export interface Plan {
   type: "plan",
   summary: string,
-  steps: Step[],
+  steps: PlanStep[],
   verification: string[],
   risks: string[]
 }
@@ -22,5 +22,15 @@ export interface PlannerNeedContext{
     questions: string[]
 }
 
+export interface PlannerReadToolCall {
+    type: "tool_call",
+    toolName: "ReadFileTool",
+    fileToRead: string
+}
 
-export type PlannerResponse = Plan | PlannerNeedContext;
+export interface PlannerInvalidResponse {
+    type: "invalid_response",
+    message: string
+}
+
+export type PlannerResponse = Plan | PlannerNeedContext | PlannerReadToolCall | PlannerInvalidResponse;
