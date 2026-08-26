@@ -20,8 +20,16 @@ function validatePlannerResponse(value: unknown): PlannerResponse {
         return { type: "tool_call", toolName: "ReadFileTool", fileToRead: value.fileToRead };
     }
 
+    if (value.type === "tool_call" && value.toolName === "GlobTool" && isString(value.pattern)) {
+        return { type: "tool_call", toolName: "GlobTool", pattern: value.pattern };
+    }
+
     if (value.type === "needs_context" && isStringArray(value.questions)) {
         return { type: "needs_context", questions: value.questions };
+    }
+
+    if (value.type === "research_result" && isString(value.answer) && isStringArray(value.sources)) {
+        return { type: "research_result", answer: value.answer, sources: value.sources };
     }
 
     if (isPlan(value)) {
@@ -51,7 +59,7 @@ function isPlanStep(value: unknown): boolean {
 function invalidResponse(): PlannerResponse {
     return {
         type: "invalid_response",
-        message: "Return exactly one allowed response shape: tool_call, plan, or needs_context.",
+        message: "Return exactly one allowed response shape: tool_call, plan, research_result, or needs_context.",
     };
 }
 

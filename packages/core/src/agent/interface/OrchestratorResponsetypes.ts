@@ -1,6 +1,7 @@
 export interface WorkerContext {
     originalRequest: string;
-    repositoryFiles: string[];
+    repositoryFiles?: string[];
+    discoveredFiles?: string[];
     requestedNewFiles?: string[];
     approvedFiles?: string[];
     sourceFiles?: Record<string, string>;

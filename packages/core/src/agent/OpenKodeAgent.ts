@@ -3,6 +3,7 @@ import type { LLMUsage } from "../llm/interface/LLMUsage.js";
 import { SpanType } from "../telemetry/TelemetryEventInterface.js";
 import type { TelemetryInterface } from "../telemetry/TelemetryInterface.js";
 import { EditFileTool } from "../tools/edit/EditFileTool.js";
+import { GlobTool } from "../tools/glob/GlobTool.js";
 import { ReadFileTool } from "../tools/read/ReadFileTool.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
 import { WriteFileTool } from "../tools/write/WriteFileTool.js";
@@ -159,6 +160,7 @@ export class OpenKodeAgent {
         let repositoryFiles: string[] | undefined;
         let approvedPlan: Plan | undefined;
         const requestedNewFiles = extractRequestedFilePaths(prompt.prompt);
+        const isResearchRequest = isRepositoryResearchRequest(prompt.prompt);
 
         console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
@@ -237,13 +239,15 @@ export class OpenKodeAgent {
                     };
                     const planner = new PlannerAgent(this.llm);
                     const sourceFiles: Record<string, string> = {};
+                    const discoveredFiles: string[] = [];
                     let feedback = plannerTask.feedback ?? "";
                     let plan: Plan | undefined;
+                    let globCalls = 0;
 
                     for (let plannerStep = 1; plannerStep <= maxSteps; plannerStep++) {
                         const task = this.withWorkerContext({ ...plannerTask, feedback }, {
                             originalRequest: prompt.prompt,
-                            repositoryFiles: repoFiles,
+                            discoveredFiles,
                             sourceFiles,
                             requestedNewFiles,
                         });
@@ -254,7 +258,34 @@ export class OpenKodeAgent {
                         }
 
                         if (result.type === "tool_call") {
-                            const toolResult = await this.readPlannerFile(result.fileToRead, repoFiles);
+                            if (result.toolName === "GlobTool") {
+                                if (discoveredFiles.length > 0 && Object.keys(sourceFiles).length === 0) {
+                                    feedback = readDiscoveredFileFeedback(prompt.prompt, discoveredFiles);
+                                    continue;
+                                }
+                                if (globCalls === 5) {
+                                    return {
+                                        response: "Cannot continue: the planner exceeded the five GlobTool-call limit.",
+                                        usage: emptyUsage(),
+                                    };
+                                }
+
+                                globCalls++;
+                                const toolResult = await new GlobTool(process.cwd()).execute(JSON.stringify({ pattern: result.pattern }));
+                                if (toolResult.ok) {
+                                    for (const file of globMatches(toolResult.output)) {
+                                        if (!discoveredFiles.includes(file)) {
+                                            discoveredFiles.push(file);
+                                        }
+                                    }
+                                }
+                                feedback = toolResult.ok
+                                    ? `${readDiscoveredFileFeedback(prompt.prompt, discoveredFiles)}\nGlobTool observation:\n${JSON.stringify(toolResult)}`
+                                    : `GlobTool found no matches. Try a broader pattern such as "${suggestGlobPattern(prompt.prompt)}".\nGlobTool observation:\n${JSON.stringify(toolResult)}`;
+                                continue;
+                            }
+
+                            const toolResult = await this.readPlannerFile(result.fileToRead, discoveredFiles);
                             if (toolResult.ok) {
                                 sourceFiles[result.fileToRead] = toolResult.output;
                             }
@@ -263,13 +294,14 @@ export class OpenKodeAgent {
                         }
 
                         if (result.type === "needs_context") {
-                            const requestedFile = mentionedRepositoryFile(result.questions, repoFiles);
-                            if (requestedFile && !Object.hasOwn(sourceFiles, requestedFile)) {
-                                const toolResult = await this.readPlannerFile(requestedFile, repoFiles);
-                                if (toolResult.ok) {
-                                    sourceFiles[requestedFile] = toolResult.output;
+                            if (isResearchRequest) {
+                                if (Object.keys(sourceFiles).length > 0) {
+                                    feedback = "You already have repository evidence in context.sourceFiles. Return research_result with an answer and source paths; do not return needs_context.";
+                                    continue;
                                 }
-                                feedback = `You asked for ${requestedFile}; the runtime read it. ReadFileTool observation:\n${JSON.stringify(toolResult)}`;
+                                feedback = discoveredFiles.length > 0
+                                    ? readDiscoveredFileFeedback(prompt.prompt, discoveredFiles)
+                                    : "This is a repository research request. Use GlobTool to discover candidate paths before requesting more context or answering.";
                                 continue;
                             }
                             if (Object.keys(sourceFiles).length > 0) {
@@ -278,6 +310,23 @@ export class OpenKodeAgent {
                                 break;
                             }
                             return { response: formatQuestions(result.questions), usage: emptyUsage() };
+                        }
+
+                        if (result.type === "research_result") {
+                            const hasEvidence = result.sources.length > 0
+                                && result.sources.every((source) => Object.hasOwn(sourceFiles, source));
+                            if (!hasEvidence) {
+                                feedback = discoveredFiles.length > 0
+                                    ? `A research_result requires a source whose contents are in context.sourceFiles. ${readDiscoveredFileFeedback(prompt.prompt, discoveredFiles)}`
+                                    : "A research_result requires at least one source path whose contents are present in context.sourceFiles. Use GlobTool and ReadFileTool before answering.";
+                                continue;
+                            }
+                            return { response: result.answer, usage: emptyUsage() };
+                        }
+
+                        if (isResearchRequest) {
+                            feedback = "This is a repository research request. Do not return a plan; use GlobTool and ReadFileTool, then return research_result.";
+                            continue;
                         }
 
                         plan = result;
@@ -292,10 +341,10 @@ export class OpenKodeAgent {
                     }
 
                     const invalidPaths = plan.steps.flatMap((step) => step.files)
-                        .filter((file) => !repoFiles.includes(file) && !requestedNewFiles.includes(file));
+                        .filter((file) => !discoveredFiles.includes(file) && !requestedNewFiles.includes(file));
                     if (invalidPaths.length > 0) {
                         return {
-                            response: `Cannot continue: the plan references files that are not in the repository: ${[...new Set(invalidPaths)].join(", ")}.`,
+                            response: `Cannot continue: the plan references files not discovered by GlobTool: ${[...new Set(invalidPaths)].join(", ")}.`,
                             usage: emptyUsage(),
                         };
                     }
@@ -463,12 +512,12 @@ export class OpenKodeAgent {
         return Object.fromEntries(entries);
     }
 
-    private async readPlannerFile(file: string, repositoryFiles: string[]): Promise<ToolResult> {
-        if (!repositoryFiles.includes(file)) {
+    private async readPlannerFile(file: string, discoveredFiles: string[]): Promise<ToolResult> {
+        if (!discoveredFiles.includes(file)) {
             return {
                 ok: false,
                 code: "UNAPPROVED_FILE",
-                message: `Planner may only read a file in the repository: "${file}".`,
+                message: `Planner may only read a file returned by GlobTool: "${file}".`,
             };
         }
 
@@ -532,10 +581,6 @@ function requestsSuppliedSourceFile(questions: string[], sourceFiles: Record<str
     return questions.some((question) => Object.hasOwn(sourceFiles, question.match(/[^\s`]+\.[^\s`]+/)?.[0] ?? ""));
 }
 
-function mentionedRepositoryFile(questions: string[], repositoryFiles: string[]): string | undefined {
-    return repositoryFiles.find((file) => questions.some((question) => question.includes(file)));
-}
-
 function shouldForcePlanner(request: string, response: OrchestratorResponse): boolean {
     if (response.type === "delegate" || response.type === "tool_call" && response.toolName === "WriteFileTool") {
         return false;
@@ -545,7 +590,66 @@ function shouldForcePlanner(request: string, response: OrchestratorResponse): bo
         return !isDirectFileContentRequest(request);
     }
 
-    return /\b(change|modify|update|fix|implement|refactor|rename|replace|remove|add)\b/i.test(request);
+    return isRepositoryResearchRequest(request)
+        || /\b(change|modify|update|fix|implement|refactor|rename|replace|remove|add)\b/i.test(request);
+}
+
+function isRepositoryResearchRequest(request: string): boolean {
+    return /\b(where\s+(?:is|are)|find|which\s+files?|how\s+is|what\s+does)\b/i.test(request)
+        && /\b(implemented|implementation|file|code|class|function|agent|config|repository|project|defined|used|located|todo)\b/i.test(request);
+}
+
+function globMatches(output: string): string[] {
+    try {
+        const value: unknown = JSON.parse(output);
+        if (
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            "matches" in value &&
+            Array.isArray(value.matches) &&
+            value.matches.every((match) => typeof match === "string")
+        ) {
+            return value.matches;
+        }
+    } catch {
+        return [];
+    }
+
+    return [];
+}
+
+function readDiscoveredFileFeedback(request: string, discoveredFiles: string[]): string {
+    const suggestedFile = mostRelevantDiscoveredFile(request, discoveredFiles);
+    return suggestedFile
+        ? `GlobTool already returned candidate paths. Your next response must be ReadFileTool for "${suggestedFile}" before another GlobTool call, needs_context, or research_result.`
+        : "GlobTool already returned candidate paths. Your next response must be one ReadFileTool call for a path in context.discoveredFiles before another GlobTool call, needs_context, or research_result.";
+}
+
+function mostRelevantDiscoveredFile(request: string, discoveredFiles: string[]): string | undefined {
+    const terms = request.toLowerCase().match(/[a-z0-9]+/g)
+        ?.filter((term) => term.length > 2 && !RESEARCH_STOP_WORDS.has(term))
+        ?? [];
+    return discoveredFiles
+        .map((file) => ({
+            file,
+            score: terms.reduce((score, term) => score + (file.toLowerCase().includes(term) ? 1 : 0), 0),
+        }))
+        .sort((left, right) => right.score - left.score || left.file.localeCompare(right.file))[0]?.file;
+}
+
+const RESEARCH_STOP_WORDS = new Set([
+    "where", "what", "which", "does", "that", "this", "with", "from", "into", "implemented", "implementation",
+]);
+
+function suggestGlobPattern(request: string): string {
+    const terms = request.toLowerCase().match(/[a-z0-9]+/g)
+        ?.filter((term) => term.length > 2 && !RESEARCH_STOP_WORDS.has(term))
+        .slice(0, 3)
+        ?? [];
+    return terms.length > 0
+        ? `**/*${terms.join("*")}*.{ts,tsx,js,jsx,json}`
+        : "**/*";
 }
 
 function isDirectFileContentRequest(request: string): boolean {

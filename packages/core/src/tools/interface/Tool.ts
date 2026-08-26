@@ -9,6 +9,8 @@ export type ToolErrorCode =
     | "TEXT_NOT_FOUND"
     | "TEXT_NOT_UNIQUE"
     | "EDIT_FAILED"
+    | "NO_MATCHES"
+    | "GLOB_FAILED"
     | "UNAPPROVED_FILE";
 
 export type ToolResult =

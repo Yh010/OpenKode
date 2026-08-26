@@ -28,9 +28,21 @@ export interface PlannerReadToolCall {
     fileToRead: string
 }
 
+export interface PlannerGlobToolCall {
+    type: "tool_call",
+    toolName: "GlobTool",
+    pattern: string
+}
+
+export interface PlannerResearchResult {
+    type: "research_result",
+    answer: string,
+    sources: string[]
+}
+
 export interface PlannerInvalidResponse {
     type: "invalid_response",
     message: string
 }
 
-export type PlannerResponse = Plan | PlannerNeedContext | PlannerReadToolCall | PlannerInvalidResponse;
+export type PlannerResponse = Plan | PlannerNeedContext | PlannerReadToolCall | PlannerGlobToolCall | PlannerResearchResult | PlannerInvalidResponse;
