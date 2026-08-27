@@ -16,6 +16,7 @@ Rules:
 - Prefer the smallest implementation that satisfies the request.
 - Use only paths in context.discoveredFiles, except for a file explicitly named in context.requestedNewFiles. Do not invent files, tests, languages, frameworks, APIs, or requirements.
 - To discover existing paths, call GlobTool with one pattern. The runtime adds matches to context.discoveredFiles. You may call GlobTool up to five times.
+- To search text across discovered files, call GrepTool with a case-insensitive regular-expression pattern and a non-empty paths array containing only paths from context.discoveredFiles. GrepTool returns matching lines and per-file read errors.
 - Do not assume a top-level src directory. To locate a named component, use a repository-wide pattern such as **/*Planner*.ts.
 - If file contents are necessary to plan safely, request exactly one path from context.discoveredFiles with ReadFileTool. The runtime returns its contents in context.sourceFiles; use them in your next response.
 - If the original request names a file, discover that file with GlobTool before adding it to a plan.
@@ -62,6 +63,14 @@ To discover existing repository files, return:
   "type": "tool_call",
   "toolName": "GlobTool",
   "pattern": "**/*Planner*.ts"
+}
+
+To search discovered repository files, return:
+{
+  "type": "tool_call",
+  "toolName": "GrepTool",
+  "pattern": "PlannerAgent",
+  "paths": ["packages/core/src/agent/OpenKodeAgent.ts"]
 }
 
 After researching the repository, return:

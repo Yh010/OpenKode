@@ -4,6 +4,7 @@ import { SpanType } from "../telemetry/TelemetryEventInterface.js";
 import type { TelemetryInterface } from "../telemetry/TelemetryInterface.js";
 import { EditFileTool } from "../tools/edit/EditFileTool.js";
 import { GlobTool } from "../tools/glob/GlobTool.js";
+import { GrepTool } from "../tools/grep/GrepTool.js";
 import { ReadFileTool } from "../tools/read/ReadFileTool.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
 import { WriteFileTool } from "../tools/write/WriteFileTool.js";
@@ -285,6 +286,12 @@ export class OpenKodeAgent {
                                 continue;
                             }
 
+                            if (result.toolName === "GrepTool") {
+                                const toolResult = await this.executeGrepToolCall(result, process.cwd(), discoveredFiles);
+                                feedback = `GrepTool observation:\n${JSON.stringify(toolResult)}`;
+                                continue;
+                            }
+
                             const toolResult = await this.readPlannerFile(result.fileToRead, discoveredFiles);
                             if (toolResult.ok) {
                                 sourceFiles[result.fileToRead] = toolResult.output;
@@ -362,6 +369,7 @@ export class OpenKodeAgent {
                         plan,
                         prompt.prompt,
                         repoFiles,
+                        discoveredFiles,
                         requestedNewFiles,
                         workerResults,
                         messages,
@@ -395,6 +403,7 @@ export class OpenKodeAgent {
         plan: Plan,
         originalRequest: string,
         repositoryFiles: string[],
+        discoveredFiles: string[],
         requestedNewFiles: string[],
         workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }>,
         messages: Message[],
@@ -420,7 +429,7 @@ export class OpenKodeAgent {
             for (let coderStep = 1; coderStep <= maxSteps; coderStep++) {
                 const task = this.withWorkerContext({ ...coderTask, feedback }, {
                     originalRequest,
-                    repositoryFiles,
+                    discoveredFiles,
                     approvedFiles,
                     sourceFiles,
                     requestedNewFiles,
@@ -470,15 +479,24 @@ export class OpenKodeAgent {
                     continue;
                 }
 
-                const toolResult = await this.executeCoderToolCall(result, process.cwd(), approvedFiles, requestedNewFiles);
+                const toolResult = result.toolName === "GrepTool"
+                    ? await this.executeGrepToolCall(result, process.cwd(), discoveredFiles)
+                    : await this.executeCoderToolCall(result, process.cwd(), approvedFiles, requestedNewFiles);
                 executedToolCalls++;
-                if (toolResult.ok) {
+                if (toolResult.ok && result.toolName !== "GrepTool") {
                     sourceFiles[result.path] = await readFile(path.join(process.cwd(), result.path), "utf8");
                     successfulToolCalls++;
                     if (result.toolName === "EditFileTool") {
                         successfulEdits.push({ path: result.path, newText: result.newText });
                     }
                 }
+                if (result.toolName === "GrepTool") {
+                    feedback = toolResult.ok
+                        ? `GrepTool returned matching lines. Use them only to locate or verify code for the approved plan step, then return an EditFileTool or WriteFileTool call when a change is still required.\nTool observation:\n${JSON.stringify(toolResult)}`
+                        : `The preceding GrepTool call failed. Correct its pattern or paths using context.discoveredFiles.\nTool observation:\n${JSON.stringify(toolResult)}`;
+                    continue;
+                }
+
                 feedback = toolResult.ok
                     ? `The preceding ${result.toolName} call succeeded. Compare the refreshed sourceFiles only with the approved plan step and its acceptance criteria. Do not make cleanup, refinement, or reversal edits. If every criterion is met, return completed. Make another tool call only for a criterion that is still visibly unmet.\nTool observation:\n${JSON.stringify(toolResult)}`
                     : `The preceding ${result.toolName} call failed. Inspect the refreshed sourceFiles and return a corrected tool_call.\nTool observation:\n${JSON.stringify(toolResult)}`;
@@ -529,7 +547,7 @@ export class OpenKodeAgent {
     }
 
     private async executeCoderToolCall(
-        toolCall: Extract<CoderResponse, { type: "tool_call" }>,
+        toolCall: Exclude<Extract<CoderResponse, { type: "tool_call" }>, { toolName: "GrepTool" }>,
         projectRoot: string,
         approvedFiles: string[],
         requestedNewFiles: string[],
@@ -561,6 +579,26 @@ export class OpenKodeAgent {
         return new WriteFileTool(projectRoot).execute(JSON.stringify({
             path: toolCall.path,
             content: toolCall.content,
+        }));
+    }
+
+    private async executeGrepToolCall(
+        toolCall: { pattern: string; paths: string[] },
+        projectRoot: string,
+        discoveredFiles: string[],
+    ): Promise<ToolResult> {
+        const unapprovedPaths = toolCall.paths.filter((file) => !discoveredFiles.includes(file));
+        if (unapprovedPaths.length > 0) {
+            return {
+                ok: false,
+                code: "UNAPPROVED_FILE",
+                message: `GrepTool may only search paths returned by GlobTool: ${[...new Set(unapprovedPaths)].join(", ")}.`,
+            };
+        }
+
+        return new GrepTool(projectRoot).execute(JSON.stringify({
+            pattern: toolCall.pattern,
+            paths: toolCall.paths,
         }));
     }
 

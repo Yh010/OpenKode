@@ -48,6 +48,20 @@ function validateCoderResponse(value: unknown): CoderResponse {
     }
 
     if (
+        value.type === "tool_call" &&
+        value.toolName === "GrepTool" &&
+        isString(value.pattern) &&
+        isStringArray(value.paths)
+    ) {
+        return {
+            type: "tool_call",
+            toolName: "GrepTool",
+            pattern: value.pattern,
+            paths: value.paths,
+        };
+    }
+
+    if (
         value.type === "completed" &&
         isString(value.summary) &&
         isStringArray(value.verification) &&

@@ -11,6 +11,7 @@ export type ToolErrorCode =
     | "EDIT_FAILED"
     | "NO_MATCHES"
     | "GLOB_FAILED"
+    | "INVALID_PATTERN"
     | "UNAPPROVED_FILE";
 
 export type ToolResult =

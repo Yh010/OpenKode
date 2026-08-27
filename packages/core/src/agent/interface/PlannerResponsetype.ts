@@ -34,6 +34,13 @@ export interface PlannerGlobToolCall {
     pattern: string
 }
 
+export interface PlannerGrepToolCall {
+    type: "tool_call",
+    toolName: "GrepTool",
+    pattern: string,
+    paths: string[]
+}
+
 export interface PlannerResearchResult {
     type: "research_result",
     answer: string,
@@ -45,4 +52,4 @@ export interface PlannerInvalidResponse {
     message: string
 }
 
-export type PlannerResponse = Plan | PlannerNeedContext | PlannerReadToolCall | PlannerGlobToolCall | PlannerResearchResult | PlannerInvalidResponse;
+export type PlannerResponse = Plan | PlannerNeedContext | PlannerReadToolCall | PlannerGlobToolCall | PlannerGrepToolCall | PlannerResearchResult | PlannerInvalidResponse;

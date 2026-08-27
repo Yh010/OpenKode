@@ -13,7 +13,14 @@ export interface WriteToolCall {
   "content": string
 }
 
-export type CoderToolCall = EditToolCall | WriteToolCall;
+export interface CoderGrepToolCall {
+  "type": "tool_call",
+  "toolName": "GrepTool",
+  "pattern": string,
+  "paths": string[]
+}
+
+export type CoderToolCall = EditToolCall | WriteToolCall | CoderGrepToolCall;
 
 export interface CoderCompleted {
   "type": "completed",

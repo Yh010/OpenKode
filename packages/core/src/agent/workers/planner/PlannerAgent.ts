@@ -24,6 +24,10 @@ function validatePlannerResponse(value: unknown): PlannerResponse {
         return { type: "tool_call", toolName: "GlobTool", pattern: value.pattern };
     }
 
+    if (value.type === "tool_call" && value.toolName === "GrepTool" && isString(value.pattern) && isStringArray(value.paths)) {
+        return { type: "tool_call", toolName: "GrepTool", pattern: value.pattern, paths: value.paths };
+    }
+
     if (value.type === "needs_context" && isStringArray(value.questions)) {
         return { type: "needs_context", questions: value.questions };
     }
