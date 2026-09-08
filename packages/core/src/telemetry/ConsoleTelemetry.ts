@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
-import type { TelemetryInterface } from "./TelemetryInterface.js";
+import type { TelemetryInterface, TelemetrySpanDetails } from "./TelemetryInterface.js";
 import { randomUUID } from 'crypto';
 import type { TraceContext } from "./TraceContext.js";
 import type { SpanType, TelemetryEventInterface, TelemetryEventType } from "./TelemetryEventInterface.js";
@@ -23,9 +23,9 @@ export class ConsoleTelemetry implements TelemetryInterface{
     }
 
     private createMetadataSafely<T>(
-        metadataFactory: ((result: T) => Record<string, unknown> | undefined) | undefined,
+        metadataFactory: ((result: T) => TelemetrySpanDetails | undefined) | undefined,
         result: T,
-    ): Record<string, unknown> | undefined {
+    ): TelemetrySpanDetails | undefined {
         if (!metadataFactory) {
             return undefined;
         }
@@ -38,7 +38,11 @@ export class ConsoleTelemetry implements TelemetryInterface{
         }
     }
 
-    async withRun<T>(name: string, operation: () => Promise<T>): Promise<T> {
+    async withRun<T>(
+        name: string,
+        operation: () => Promise<T>,
+        metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
+    ): Promise<T> {
         const runId: string = "run"+randomUUID();
         const rootSpanId: string = "rootSpan" + randomUUID() ;
 
@@ -57,6 +61,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         try{
             const resp = await this.contextStorage.run(rootContext,operation) ;
             const endTime = new Date() ;
+            const details = this.createMetadataSafely(metadataFactory, resp);
             //const timeTaken = endTime-startTime ;
             const obj:TelemetryEventInterface = {
                 type: "run",
@@ -67,7 +72,9 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 startedAt: startTime.toISOString(),
                 endedAt:endTime.toISOString(),
                 //msg: `${name} Span ended with rootId: ${runId} and rootSpanId: ${rootSpanId} time taken: ${timeTaken}`,
-                status: "ok"
+                status: "ok",
+                ...(details?.metadata ? { metadata: details.metadata } : {}),
+                ...(details?.llm ? { llm: details.llm } : {}),
             }
             console.log(obj);
             this.emitEventSafely(obj) ;
@@ -99,7 +106,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         type:TelemetryEventType,
         name: SpanType,
         operation: () => Promise<T>,
-        metadataFactory?: (result: T) => Record<string, unknown> | undefined,
+        metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
     ): Promise<T> {
         const parentContext = this.contextStorage.getStore();
 
@@ -127,7 +134,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
          try{
             const resp = await this.contextStorage.run(childContext,operation) ;
             const endTime = new Date() ;
-            const metadata = this.createMetadataSafely(metadataFactory, resp);
+            const details = this.createMetadataSafely(metadataFactory, resp);
             //const timeTaken = endTime-startTime ;
             const obj:TelemetryEventInterface = {
                 type,
@@ -139,7 +146,8 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 startedAt: startTime.toISOString(),
                 endedAt:endTime.toISOString(),
                 status: "ok",
-                ...(metadata ? { metadata } : {}),
+                ...(details?.metadata ? { metadata: details.metadata } : {}),
+                ...(details?.llm ? { llm: details.llm } : {}),
             }
             console.log(obj);
             this.emitEventSafely(obj)

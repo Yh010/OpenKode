@@ -19,6 +19,16 @@ export const SpanType = {
 
 export type SpanType = typeof SpanType[keyof typeof SpanType];
 
+export interface LlmTelemetry {
+    provider: string;
+    model: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalDurationNs?: number;
+    promptEvalDurationNs?: number;
+    evalDurationNs?: number;
+}
+
 export interface TelemetryEventInterface {
     eventId: string; //identifies this stored telemetry record
     runId: string; //groups the whole user request
@@ -30,4 +40,5 @@ export interface TelemetryEventInterface {
     endedAt: string;
     status: "ok" | "error";
     metadata?: Record<string, unknown>;
+    llm?: LlmTelemetry;
 }

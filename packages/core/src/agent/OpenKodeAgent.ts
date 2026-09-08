@@ -52,7 +52,11 @@ export class OpenKodeAgent {
  * @returns The final response and token usage.
  */
     async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
-        return this.telemetry.withRun("openKode-run",()=> this.loop(prompt)) ;
+        return this.telemetry.withRun(
+            "openKode-run",
+            () => this.loop(prompt),
+            result => ({ metadata: { finalOutput: result.response } }),
+        );
     }
 
     // private async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
@@ -236,7 +240,7 @@ export class OpenKodeAgent {
                         type: "delegate",
                         agent: "planner",
                         task: prompt.prompt,
-                        feedback: "Create a minimal implementation plan from the original request and supplied repository context.",
+                        feedback: initialPlannerFeedback(prompt.prompt),
                     };
                     const planner = new PlannerAgent(this.llm);
                     const sourceFiles: Record<string, string> = {};
@@ -260,6 +264,11 @@ export class OpenKodeAgent {
 
                         if (result.type === "tool_call") {
                             if (result.toolName === "GlobTool") {
+                                const requestedFile = extractRequestedFilePaths(prompt.prompt)[0];
+                                if (requestedFile && result.pattern !== exactFileGlobPattern(requestedFile)) {
+                                    feedback = `The original request names "${requestedFile}". Do not execute a guessed glob. Your next response must call GlobTool with the exact pattern "${exactFileGlobPattern(requestedFile)}".`;
+                                    continue;
+                                }
                                 if (discoveredFiles.length > 0 && Object.keys(sourceFiles).length === 0) {
                                     feedback = readDiscoveredFileFeedback(prompt.prompt, discoveredFiles);
                                     continue;
@@ -273,16 +282,45 @@ export class OpenKodeAgent {
 
                                 globCalls++;
                                 const toolResult = await new GlobTool(process.cwd()).execute(JSON.stringify({ pattern: result.pattern }));
+                                if (!toolResult.ok && requestedFile) {
+                                    return {
+                                        response: `I couldn't find "${requestedFile}" in this project.`,
+                                        usage: emptyUsage(),
+                                    };
+                                }
                                 if (toolResult.ok) {
-                                    for (const file of globMatches(toolResult.output)) {
+                                    const matches = globMatches(toolResult.output);
+                                    for (const file of matches) {
                                         if (!discoveredFiles.includes(file)) {
                                             discoveredFiles.push(file);
                                         }
                                     }
+
+                                    const codePattern = codeSearchPattern(prompt.prompt);
+                                    if (codePattern) {
+                                        const grepResult = await new GrepTool(process.cwd()).execute(JSON.stringify({
+                                            pattern: codePattern,
+                                            paths: matches,
+                                        }));
+                                        if (grepResult.ok) {
+                                            const matchingFiles = grepMatchedFiles(grepResult.output);
+                                            if (matchingFiles.length > 0) {
+                                            return {
+                                                response: `The matching code is in: ${matchingFiles.join(", ")}.`,
+                                                usage: emptyUsage(),
+                                            };
+                                            }
+                                        }
+
+                                        return {
+                                            response: "I couldn't find the requested code in the discovered source files.",
+                                            usage: emptyUsage(),
+                                        };
+                                    }
                                 }
                                 feedback = toolResult.ok
                                     ? `${readDiscoveredFileFeedback(prompt.prompt, discoveredFiles)}\nGlobTool observation:\n${JSON.stringify(toolResult)}`
-                                    : `GlobTool found no matches. Try a broader pattern such as "${suggestGlobPattern(prompt.prompt)}".\nGlobTool observation:\n${JSON.stringify(toolResult)}`;
+                                    : `GlobTool found no matches. ${noGlobMatchFeedback(prompt.prompt)}\nGlobTool observation:\n${JSON.stringify(toolResult)}`;
                                 continue;
                             }
 
@@ -410,6 +448,7 @@ export class OpenKodeAgent {
         maxSteps: number,
     ): Promise<LoopResult | undefined> {
         const coder = new CoderAgent(this.llm);
+        let successfulChanges = 0;
 
         for (const planStep of plan.steps) {
             const approvedFiles = [...new Set(planStep.files)];
@@ -457,7 +496,7 @@ export class OpenKodeAgent {
                 }
 
                 if (result.type === "completed") {
-                    if (successfulToolCalls === 0) {
+                    if (successfulChanges === 0) {
                         feedback = "You cannot return completed yet because no file change has succeeded for this implementation step. Inspect context.sourceFiles and return one exact EditFileTool or WriteFileTool call.";
                         continue;
                     }
@@ -486,6 +525,7 @@ export class OpenKodeAgent {
                 if (toolResult.ok && result.toolName !== "GrepTool") {
                     sourceFiles[result.path] = await readFile(path.join(process.cwd(), result.path), "utf8");
                     successfulToolCalls++;
+                    successfulChanges++;
                     if (result.toolName === "EditFileTool") {
                         successfulEdits.push({ path: result.path, newText: result.newText });
                     }
@@ -504,7 +544,7 @@ export class OpenKodeAgent {
 
             if (!completed) {
                 return {
-                    response: `Cannot continue: the coder did not verify completion after ${maxSteps} tool calls.`,
+                    response: `Cannot continue: the coder did not verify completion after ${maxSteps} attempts.`,
                     usage: emptyUsage(),
                 };
             }
@@ -681,13 +721,72 @@ const RESEARCH_STOP_WORDS = new Set([
 ]);
 
 function suggestGlobPattern(request: string): string {
-    const terms = request.toLowerCase().match(/[a-z0-9]+/g)
-        ?.filter((term) => term.length > 2 && !RESEARCH_STOP_WORDS.has(term))
-        .slice(0, 3)
-        ?? [];
-    return terms.length > 0
-        ? `**/*${terms.join("*")}*.{ts,tsx,js,jsx,json}`
-        : "**/*";
+    const requestedFile = extractRequestedFilePaths(request)[0];
+    return requestedFile
+        ? exactFileGlobPattern(requestedFile)
+        : "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}";
+}
+
+function grepMatchedFiles(output: string): string[] {
+    try {
+        const value: unknown = JSON.parse(output);
+        if (
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            "matches" in value &&
+            Array.isArray(value.matches)
+        ) {
+            return [...new Set(value.matches.flatMap((match) =>
+                typeof match === "object" && match !== null && "path" in match && typeof match.path === "string"
+                    ? [match.path]
+                    : [],
+            ))];
+        }
+    } catch {
+        return [];
+    }
+
+    return [];
+}
+
+function codeSearchPattern(request: string): string | undefined {
+    const match = request.match(/\b(?:code|line|snippet)\b\s+(.+)/i);
+    const query = match?.[1]?.trim().replace(/[.;]+$/, "");
+    if (!query || query.length < 3) {
+        return undefined;
+    }
+
+    return query
+        .split(/\s+/)
+        .map((part) => escapeRegularExpression(part))
+        .join("\\W*");
+}
+
+function escapeRegularExpression(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function exactFileGlobPattern(file: string): string {
+    return `**/${file}`;
+}
+
+function initialPlannerFeedback(request: string): string {
+    const requestedFile = extractRequestedFilePaths(request)[0];
+    if (requestedFile) {
+        return `The original request explicitly names "${requestedFile}". First call GlobTool with the exact pattern "${exactFileGlobPattern(requestedFile)}". Do not substitute an example path or search request words as a filename.`;
+    }
+
+    return isRepositoryResearchRequest(request)
+        ? "This is repository research. First call GlobTool with \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}\". Then use GrepTool to search the requested code or symbol in the returned paths."
+        : "Create a minimal implementation plan from the original request and supplied repository context.";
+}
+
+function noGlobMatchFeedback(request: string): string {
+    const requestedFile = extractRequestedFilePaths(request)[0];
+    return requestedFile
+        ? `The requested file "${requestedFile}" was not found. Return needs_context and state that exact filename is absent; do not repeat GlobTool.`
+        : `Use the repository-wide source pattern "${suggestGlobPattern(request)}". Do not construct a glob pattern from words in the request.`;
 }
 
 function isDirectFileContentRequest(request: string): boolean {

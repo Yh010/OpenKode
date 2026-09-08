@@ -102,20 +102,25 @@ export class TelemetryPayloadPolicy {
         let remaining = this.maxContentChars;
         let truncated = false;
 
-        const value = messages.map((message) => {
+        // The final message holds the current tool observation and worker context.
+        // Capture from newest to oldest so a large system prompt cannot hide it.
+        const captured = new Array<TelemetryMessage>(messages.length);
+        for (let index = messages.length - 1; index >= 0; index--) {
+            const message = messages[index]!;
             const content = redactSensitiveText(message.content);
             if (content.length <= remaining) {
                 remaining -= content.length;
-                return { role: message.role, content };
+                captured[index] = { role: message.role, content };
+                continue;
             }
 
             const capturedContent = `${content.slice(0, Math.max(remaining, 0))}…[truncated]`;
             remaining = 0;
             truncated = true;
-            return { role: message.role, content: capturedContent };
-        });
+            captured[index] = { role: message.role, content: capturedContent };
+        }
 
-        return { value, truncated };
+        return { value: captured, truncated };
     }
 }
 
