@@ -11,7 +11,8 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --import tsx --test test/**/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

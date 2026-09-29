@@ -62,6 +62,14 @@ function validateCoderResponse(value: unknown): CoderResponse {
     }
 
     if (
+        value.type === "tool_call" &&
+        value.toolName === "RunCommandTool" &&
+        isVerificationScript(value.script)
+    ) {
+        return { type: "tool_call", toolName: "RunCommandTool", script: value.script };
+    }
+
+    if (
         value.type === "completed" &&
         isString(value.summary) &&
         isStringArray(value.verification) &&
@@ -99,4 +107,8 @@ function isString(value: unknown): value is string {
 
 function isStringArray(value: unknown): value is string[] {
     return Array.isArray(value) && value.every(isString);
+}
+
+function isVerificationScript(value: unknown): value is "test" | "lint" | "build" | "format:check" {
+    return value === "test" || value === "lint" || value === "build" || value === "format:check";
 }

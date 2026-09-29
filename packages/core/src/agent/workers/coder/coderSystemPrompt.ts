@@ -21,6 +21,8 @@ Rules:
 - Do not invent files, tests, APIs, dependencies, configuration, or behavior not required by the coding task.
 - Preserve the existing project style.
 - Return one tool call at a time. The runtime applies it, refreshes the file contents, and sends an observation in feedback.
+- After at least one successful file change, you may call RunCommandTool to verify the work. It accepts only test, lint, build, or format:check; never request a shell command or arguments.
+- Do not return completed after a RunCommandTool failure or timeout. Report the verification failure in risks instead.
 - After every successful tool call, compare refreshed sourceFiles only with the approved plan step and acceptance criteria. If every criterion is met, return completed immediately.
 - A successful tool call is not an invitation to improve, clean up, or revise code. Make another tool call only when a supplied acceptance criterion is visibly still unmet.
 - After any tool observation, do not return needs_context. If an edit reports TEXT_NOT_FOUND or TEXT_NOT_UNIQUE, inspect sourceFiles and return a corrected EditFileTool call whose oldText is exact current file text.
@@ -51,6 +53,13 @@ To search previously discovered files, return:
   "toolName": "GrepTool",
   "pattern": "oldFunction",
   "paths": ["relative/path/to/file.ts"]
+}
+
+To run one approved project verification script after editing, return:
+{
+  "type": "tool_call",
+  "toolName": "RunCommandTool",
+  "script": "test"
 }
 
 After verification, return:

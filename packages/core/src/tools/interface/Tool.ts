@@ -12,7 +12,16 @@ export type ToolErrorCode =
     | "NO_MATCHES"
     | "GLOB_FAILED"
     | "INVALID_PATTERN"
-    | "UNAPPROVED_FILE";
+    | "UNAPPROVED_FILE"
+    | "INVALID_COMMAND"
+    | "MANIFEST_NOT_FOUND"
+    | "INVALID_MANIFEST"
+    | "SCRIPT_NOT_FOUND"
+    | "UNSUPPORTED_PROJECT"
+    | "UNSUPPORTED_PACKAGE_MANAGER"
+    | "AMBIGUOUS_PACKAGE_MANAGER"
+    | "COMMAND_FAILED"
+    | "COMMAND_TIMED_OUT";
 
 export type ToolResult =
     | { ok: true; output: string }

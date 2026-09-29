@@ -2,13 +2,14 @@
 
 import { createOpenKodeAgent, type AgentRequest } from '@openkode/core';
 import { Command } from 'commander';
+import { runInteractiveChat } from "../interactiveChat.js";
 
 export function loadPromptCommand(program: Command) {
     program
         .argument("[prompt...]", "task for the agent")
         .action(async (prompt: string[]) => {
             if (!prompt || prompt.length === 0) {
-                program.help();
+                await runInteractiveChat();
                 return;
             }
 

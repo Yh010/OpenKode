@@ -8,6 +8,7 @@ import { GrepTool } from "../tools/grep/GrepTool.js";
 import { ReadFileTool } from "../tools/read/ReadFileTool.js";
 import { RepoScanner } from "../tools/reposcan/Reposcanner.js";
 import { WriteFileTool } from "../tools/write/WriteFileTool.js";
+import { RunCommandTool } from "../tools/command/RunCommandTool.js";
 import type { AgentRequest } from "./interface/AgentRequest.js";
 import type { AgentResponse } from "./interface/AgentResponse.js";
 import type { CoderResponse } from "./interface/CoderResponsetypes.js";
@@ -55,7 +56,7 @@ export class OpenKodeAgent {
         return this.telemetry.withRun(
             "openKode-run",
             () => this.loop(prompt),
-            result => ({ metadata: { finalOutput: result.response } }),
+            result => ({ metadata: { finalOutput: result.response, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
         );
     }
 
@@ -173,7 +174,7 @@ export class OpenKodeAgent {
                 { role: "system", content: orchestratorSystemPrompt },
                 {
                     role: "user",
-                    content: JSON.stringify({ request: prompt.prompt, workerResults }),
+                    content: JSON.stringify({ request: prompt.prompt, conversation: prompt.history ?? [], workerResults }),
                 },
             ];
 
@@ -249,9 +250,19 @@ export class OpenKodeAgent {
                     let plan: Plan | undefined;
                     let globCalls = 0;
 
+                    if (isProjectOverviewRequest(prompt.prompt)) {
+                        const overviewSource = await this.loadProjectOverviewSource(process.cwd());
+                        if (overviewSource) {
+                            discoveredFiles.push(overviewSource.path);
+                            sourceFiles[overviewSource.path] = overviewSource.content;
+                            feedback = `This is a project-overview research request. The overview source "${overviewSource.path}" is already available in context.sourceFiles. Return research_result using that source; do not create a plan or request more context.`;
+                        }
+                    }
+
                     for (let plannerStep = 1; plannerStep <= maxSteps; plannerStep++) {
                         const task = this.withWorkerContext({ ...plannerTask, feedback }, {
                             originalRequest: prompt.prompt,
+                            conversation: prompt.history ?? [],
                             discoveredFiles,
                             sourceFiles,
                             requestedNewFiles,
@@ -412,6 +423,7 @@ export class OpenKodeAgent {
                         workerResults,
                         messages,
                         maxSteps,
+                        prompt.history ?? [],
                     );
                     if (codingFailure) {
                         return codingFailure;
@@ -446,9 +458,12 @@ export class OpenKodeAgent {
         workerResults: Array<{ worker: "planner" | "coder"; result: PlannerResponse | CoderResponse }>,
         messages: Message[],
         maxSteps: number,
+        history: NonNullable<AgentRequest["history"]>,
     ): Promise<LoopResult | undefined> {
         const coder = new CoderAgent(this.llm);
         let successfulChanges = 0;
+        const requestedVerification = requestedVerificationScript(originalRequest);
+        const completedVerifications = new Set<string>();
 
         for (const planStep of plan.steps) {
             const approvedFiles = [...new Set(planStep.files)];
@@ -468,6 +483,7 @@ export class OpenKodeAgent {
             for (let coderStep = 1; coderStep <= maxSteps; coderStep++) {
                 const task = this.withWorkerContext({ ...coderTask, feedback }, {
                     originalRequest,
+                    conversation: history,
                     discoveredFiles,
                     approvedFiles,
                     sourceFiles,
@@ -518,11 +534,18 @@ export class OpenKodeAgent {
                     continue;
                 }
 
+                if (result.toolName === "RunCommandTool" && successfulChanges === 0) {
+                    feedback = "RunCommandTool may only run after a successful file change in this implementation step. Return one exact EditFileTool or WriteFileTool call first.";
+                    continue;
+                }
+
                 const toolResult = result.toolName === "GrepTool"
                     ? await this.executeGrepToolCall(result, process.cwd(), discoveredFiles)
+                    : result.toolName === "RunCommandTool"
+                        ? await new RunCommandTool(process.cwd()).execute(JSON.stringify({ script: result.script }))
                     : await this.executeCoderToolCall(result, process.cwd(), approvedFiles, requestedNewFiles);
                 executedToolCalls++;
-                if (toolResult.ok && result.toolName !== "GrepTool") {
+                if (toolResult.ok && result.toolName !== "GrepTool" && result.toolName !== "RunCommandTool") {
                     sourceFiles[result.path] = await readFile(path.join(process.cwd(), result.path), "utf8");
                     successfulToolCalls++;
                     successfulChanges++;
@@ -537,6 +560,18 @@ export class OpenKodeAgent {
                     continue;
                 }
 
+                if (result.toolName === "RunCommandTool") {
+                    if (!toolResult.ok) {
+                        return {
+                            response: `Verification failed: ${toolResult.message}`,
+                            usage: emptyUsage(),
+                        };
+                    }
+                    completedVerifications.add(result.script);
+                    feedback = `The preceding RunCommandTool verification succeeded. Compare the refreshed sourceFiles only with the approved plan step and its acceptance criteria, then return completed if they are met.\nTool observation:\n${JSON.stringify(toolResult)}`;
+                    continue;
+                }
+
                 feedback = toolResult.ok
                     ? `The preceding ${result.toolName} call succeeded. Compare the refreshed sourceFiles only with the approved plan step and its acceptance criteria. Do not make cleanup, refinement, or reversal edits. If every criterion is met, return completed. Make another tool call only for a criterion that is still visibly unmet.\nTool observation:\n${JSON.stringify(toolResult)}`
                     : `The preceding ${result.toolName} call failed. Inspect the refreshed sourceFiles and return a corrected tool_call.\nTool observation:\n${JSON.stringify(toolResult)}`;
@@ -548,6 +583,19 @@ export class OpenKodeAgent {
                     usage: emptyUsage(),
                 };
             }
+        }
+
+        if (requestedVerification && !completedVerifications.has(requestedVerification)) {
+            const verificationResult = await new RunCommandTool(process.cwd()).execute(JSON.stringify({
+                script: requestedVerification,
+            }));
+            if (!verificationResult.ok) {
+                return {
+                    response: `Verification failed: ${verificationResult.message}`,
+                    usage: emptyUsage(),
+                };
+            }
+            console.log(`[OpenKode][verification] ${requestedVerification} succeeded.`);
         }
     }
 
@@ -582,12 +630,23 @@ export class OpenKodeAgent {
         return new ReadFileTool(process.cwd()).execute(file);
     }
 
+    private async loadProjectOverviewSource(projectRoot: string): Promise<{ path: string; content: string } | undefined> {
+        for (const pattern of ["**/{README,Readme,readme}.{md,mdx}", "**/package.json"]) {
+            const matchesResult = await new GlobTool(projectRoot).execute(JSON.stringify({ pattern }));
+            if (!matchesResult.ok) continue;
+            const candidate = globMatches(matchesResult.output)[0];
+            if (!candidate) continue;
+            const readResult = await new ReadFileTool(projectRoot).execute(candidate);
+            if (readResult.ok) return { path: candidate, content: readResult.output };
+        }
+    }
+
     private withWorkerContext(task: Delegate, context: WorkerContext): Delegate {
         return { ...task, context };
     }
 
     private async executeCoderToolCall(
-        toolCall: Exclude<Extract<CoderResponse, { type: "tool_call" }>, { toolName: "GrepTool" }>,
+        toolCall: Exclude<Extract<CoderResponse, { type: "tool_call" }>, { toolName: "GrepTool" | "RunCommandTool" }>,
         projectRoot: string,
         approvedFiles: string[],
         requestedNewFiles: string[],
@@ -668,13 +727,20 @@ function shouldForcePlanner(request: string, response: OrchestratorResponse): bo
         return !isDirectFileContentRequest(request);
     }
 
-    return isRepositoryResearchRequest(request)
+    return isProjectOverviewRequest(request)
+        || isRepositoryResearchRequest(request)
         || /\b(change|modify|update|fix|implement|refactor|rename|replace|remove|add)\b/i.test(request);
 }
 
 function isRepositoryResearchRequest(request: string): boolean {
-    return /\b(where\s+(?:is|are)|find|which\s+files?|how\s+is|what\s+does)\b/i.test(request)
+    return isProjectOverviewRequest(request)
+        || /\b(where\s+(?:is|are)|find|which\s+files?|how\s+is|what\s+does)\b/i.test(request)
         && /\b(implemented|implementation|file|code|class|function|agent|config|repository|project|defined|used|located|todo)\b/i.test(request);
+}
+
+export function isProjectOverviewRequest(request: string): boolean {
+    return /\b(what\s+is|describe|explain|overview|tell\s+me\s+about)\b/i.test(request)
+        && /\b(this\s+)?(project|repository|repo|codebase)\b/i.test(request);
 }
 
 function globMatches(output: string): string[] {
@@ -777,6 +843,10 @@ function initialPlannerFeedback(request: string): string {
         return `The original request explicitly names "${requestedFile}". First call GlobTool with the exact pattern "${exactFileGlobPattern(requestedFile)}". Do not substitute an example path or search request words as a filename.`;
     }
 
+    if (isProjectOverviewRequest(request)) {
+        return "This is a project-overview research request. First call GlobTool with \"**/{README,Readme,readme}.{md,mdx}\". Read a matching overview document before returning research_result. If no overview document exists, call GlobTool with \"**/package.json\" and read that manifest instead.";
+    }
+
     return isRepositoryResearchRequest(request)
         ? "This is repository research. First call GlobTool with \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}\". Then use GrepTool to search the requested code or symbol in the returned paths."
         : "Create a minimal implementation plan from the original request and supplied repository context.";
@@ -784,6 +854,10 @@ function initialPlannerFeedback(request: string): string {
 
 function noGlobMatchFeedback(request: string): string {
     const requestedFile = extractRequestedFilePaths(request)[0];
+    if (isProjectOverviewRequest(request)) {
+        return "No README-style overview document was found. Next call GlobTool with \"**/package.json\", then read a matching manifest before returning research_result.";
+    }
+
     return requestedFile
         ? `The requested file "${requestedFile}" was not found. Return needs_context and state that exact filename is absent; do not repeat GlobTool.`
         : `Use the repository-wide source pattern "${suggestGlobPattern(request)}". Do not construct a glob pattern from words in the request.`;
@@ -791,6 +865,14 @@ function noGlobMatchFeedback(request: string): string {
 
 function isDirectFileContentRequest(request: string): boolean {
     return /\b(what|show|read|contents?|contain)\b/i.test(request);
+}
+
+function requestedVerificationScript(request: string): "test" | "lint" | "build" | "format:check" | undefined {
+    const match = request.match(/\b(?:run|verify|check)\s+(?:the\s+)?(test|lint|build|format(?::|\s+)check)\b/i);
+    const script = match?.[1]?.toLowerCase().replace(/\s+/, ":");
+    return script === "test" || script === "lint" || script === "build" || script === "format:check"
+        ? script
+        : undefined;
 }
 
 function hasAllApprovedSourceFiles(

@@ -16,6 +16,7 @@ Rules:
 - To search text across discovered files, call GrepTool with a case-insensitive regular-expression pattern and a non-empty paths array containing only paths from context.discoveredFiles. GrepTool returns matching lines and per-file read errors.
 - If context.originalRequest names a filename, the first GlobTool pattern must be exactly **/<that filename>. Never turn request words into a filename pattern and never substitute an example filename.
 - For a code-text search without a filename, first use GlobTool with **/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}, then use GrepTool on the discovered paths.
+- For a project-overview request (for example, "what is this project about?"), first discover README-style files with **/{README,Readme,readme}.{md,mdx} and read one. If none exist, discover and read **/package.json. Return research_result based only on those supplied contents; do not create a plan.
 - If file contents are necessary to plan safely, request exactly one path from context.discoveredFiles with ReadFileTool. The runtime returns its contents in context.sourceFiles; use them in your next response.
 - If the original request names a file, discover that file with GlobTool before adding it to a plan.
 - Once context.sourceFiles contains a requested file, use that source and the original request to produce a plan. Do not return needs_context for additional details that can be determined from the supplied source.

@@ -62,6 +62,7 @@ OpenKode is an active prototype, not yet a production-ready coding agent. It cur
 | `EditFileTool` | Replace one exact, unique text block. | Rejects missing or ambiguous target text. |
 | `GlobTool` | Discover files by name or pattern. | Ignores generated/dependency folders and caps results. |
 | `GrepTool` | Search text or regex patterns inside discovered files. | Searches only explicit, previously discovered paths. |
+| `RunCommandTool` | Run an approved Node-project verification script. | Only root `package.json` scripts on the fixed allowlist; never invokes a shell. |
 
 ### What works today
 
@@ -79,7 +80,11 @@ OpenKode is an active prototype, not yet a production-ready coding agent. It cur
 
 The basic tools work, but agent reliability is still being improved. In particular, broad questions such as “find all references” need stricter runtime enforcement so the model must use Grep across the required file set before returning an answer.
 
-There is also no Bash/command-execution tool yet, so OpenKode cannot independently run a project build, tests, linting, or format checks after a change.
+OpenKode now includes a constrained command-execution tool for project builds, tests, linting, and format checks after a change.
+
+### Verification commands
+
+OpenKode can automatically run a small set of verification scripts after a change: `test`, `lint`, `build`, and `format:check`. It only reads scripts from the target project's root `package.json`, selects pnpm, npm, or Yarn from that project's `packageManager` field or lockfile, and runs the script without a shell or model-supplied arguments. Non-Node projects and arbitrary commands are not supported in this first release.
 
 ## Setup
 
@@ -148,6 +153,15 @@ Set-Location C:\path\to\your\project
 openkode "what does package.json contain?"
 ```
 
+For a persistent interactive chat, start OpenKode without a prompt:
+
+```powershell
+Set-Location C:\path\to\your\project
+openkode
+```
+
+Each interactive launch starts a new project-scoped chat. Use `/new`, `/chats`, `/rename <title>`, `/help`, and `/exit` inside the prompt. Chats are saved locally under `~/.openkode/chats` (or `OPENKODE_HOME` when set); only user prompts and final OpenKode responses are retained. The one-shot `openkode "prompt"` form remains available for scripts and does not create a saved chat.
+
 Useful checks:
 
 ```powershell
@@ -170,7 +184,7 @@ packages/
 - [x] Add safe Read, Write, and Edit filesystem tools.
 - [x] Add Glob and Grep tools for repository discovery and code search.
 - [ ] Enforce evidence-backed reference-search workflows and improve tool reliability.
-- [ ] Add a constrained command-execution tool for builds, tests, and linting.
+- [x] Add a constrained command-execution tool for builds, tests, and linting.
 - [ ] Build an evaluation suite to measure agent reliability on real coding tasks.
 
 ## Development status

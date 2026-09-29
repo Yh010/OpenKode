@@ -5,3 +5,6 @@ export type { AgentRequest } from "./agent/interface/AgentRequest.js";
 export type { AgentResponse } from "./agent/interface/AgentResponse.js";
 
 export { createOpenKodeAgent } from "./factory/createOpenKodeAgent.js";
+
+export { ChatStore } from "./chat/ChatStore.js";
+export type { Chat, ChatTurn } from "./chat/ChatStore.js";

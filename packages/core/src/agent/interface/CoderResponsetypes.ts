@@ -20,7 +20,13 @@ export interface CoderGrepToolCall {
   "paths": string[]
 }
 
-export type CoderToolCall = EditToolCall | WriteToolCall | CoderGrepToolCall;
+export interface RunCommandToolCall {
+  "type": "tool_call",
+  "toolName": "RunCommandTool",
+  "script": "test" | "lint" | "build" | "format:check"
+}
+
+export type CoderToolCall = EditToolCall | WriteToolCall | CoderGrepToolCall | RunCommandToolCall;
 
 export interface CoderCompleted {
   "type": "completed",

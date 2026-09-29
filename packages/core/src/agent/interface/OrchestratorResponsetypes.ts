@@ -1,3 +1,5 @@
+import type { ChatTurn } from "../../chat/ChatStore.js";
+
 export interface WorkerContext {
     originalRequest: string;
     repositoryFiles?: string[];
@@ -5,6 +7,7 @@ export interface WorkerContext {
     requestedNewFiles?: string[];
     approvedFiles?: string[];
     sourceFiles?: Record<string, string>;
+    conversation?: ChatTurn[];
 }
 
 export interface Delegate{

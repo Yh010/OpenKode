@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
     "@openkode/core": "workspace:*",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2"
