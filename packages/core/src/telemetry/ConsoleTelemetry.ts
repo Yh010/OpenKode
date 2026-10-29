@@ -107,6 +107,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         name: SpanType,
         operation: () => Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
+        errorMetadataFactory?: (error: unknown) => TelemetrySpanDetails | undefined,
     ): Promise<T> {
         const parentContext = this.contextStorage.getStore();
 
@@ -155,6 +156,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
 
         }catch(err){
             const endTime = new Date() ;
+            const details = this.createMetadataSafely(errorMetadataFactory, err);
             const obj : TelemetryEventInterface = {
                 type,
                 eventId: `event-${randomUUID()}`,
@@ -167,7 +169,9 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 status: "error",
                 metadata:{
                     error: err instanceof Error ? err.message : String(err),
+                    ...details?.metadata,
                 },
+                ...(details?.llm ? { llm: details.llm } : {}),
             }
             this.emitEventSafely(obj)
             console.log(obj);

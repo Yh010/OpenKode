@@ -33,7 +33,8 @@ test("sends persisted chat history to orchestration and records the chat ID in r
     }, () => {});
 
     const request = requests[0] as { messages: Array<{ role: string; content: string }> };
-    const userPayload = JSON.parse(request.messages[1]!.content) as { conversation: Array<{ content: string }> };
-    assert.equal(userPayload.conversation[0]?.content, "Use TypeScript.");
+    const background = JSON.parse(request.messages[1]!.content) as { backgroundConversation: Array<{ content: string }> };
+    assert.equal(background.backgroundConversation[0]?.content, "Use TypeScript.");
+    assert.equal(JSON.parse(request.messages.at(-1)!.content).request,"What did we decide?");
     assert.equal(runMetadata?.metadata?.chatId, "chat-123");
 });

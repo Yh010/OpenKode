@@ -9,6 +9,7 @@ import type { LLMResponse } from "../interface/LLMResponse.js";
 import type { LLMUsage } from "../interface/LLMUsage.js";
 import type { Message } from "../../agent/interface/Message.js";
 import { createCoderMessages, createPlannerMessages } from "../prompts/workerMessages.js";
+import { coderResponseSchema } from "./coderResponseSchema.js";
 
 export class OllamaProvider implements LLMProvider {
     async generate(request: LLMRequest): Promise<LLMResponse> {
@@ -67,7 +68,7 @@ export class OllamaProvider implements LLMProvider {
                     model: "qwen2.5-coder:3b",
                     messages,
                     stream: false,
-                    format: "json",
+                    format: role === "coder" ? coderResponseSchema : "json",
                 })
             }
         );

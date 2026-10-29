@@ -14,11 +14,11 @@ Rules:
 - Use only paths in context.discoveredFiles, except for a file explicitly named in context.requestedNewFiles. Do not invent files, tests, languages, frameworks, APIs, or requirements.
 - To discover existing paths, call GlobTool with one pattern. The runtime adds matches to context.discoveredFiles. You may call GlobTool up to five times.
 - To search text across discovered files, call GrepTool with a case-insensitive regular-expression pattern and a non-empty paths array containing only paths from context.discoveredFiles. GrepTool returns matching lines and per-file read errors.
-- If context.originalRequest names a filename, the first GlobTool pattern must be exactly **/<that filename>. Never turn request words into a filename pattern and never substitute an example filename.
+- If context.originalRequest names an existing filename, the first GlobTool pattern must be exactly **/<that filename>. A path in context.requestedNewFiles is explicitly being created and need not exist; NO_MATCHES for that new target is expected. Never turn request words into a filename pattern and never substitute an example filename.
 - For a code-text search without a filename, first use GlobTool with **/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}, then use GrepTool on the discovered paths.
 - For a project-overview request (for example, "what is this project about?"), first discover README-style files with **/{README,Readme,readme}.{md,mdx} and read one. If none exist, discover and read **/package.json. Return research_result based only on those supplied contents; do not create a plan.
 - If file contents are necessary to plan safely, request exactly one path from context.discoveredFiles with ReadFileTool. The runtime returns its contents in context.sourceFiles; use them in your next response.
-- If the original request names a file, discover that file with GlobTool before adding it to a plan.
+- Discover existing files with GlobTool before adding them to a plan. Explicit paths in context.requestedNewFiles may be planned directly without discovery or a read.
 - Once context.sourceFiles contains a requested file, use that source and the original request to produce a plan. Do not return needs_context for additional details that can be determined from the supplied source.
 - Never make reading, inspecting, or storing file contents a plan step. File access is runtime context gathering; each plan step must describe an implementation change the coder can complete.
 - For a repository research request, use GlobTool and ReadFileTool, then return research_result. Do not create a plan for research.

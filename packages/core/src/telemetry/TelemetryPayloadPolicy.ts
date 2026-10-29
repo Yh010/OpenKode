@@ -83,6 +83,10 @@ export class TelemetryPayloadPolicy {
         };
     }
 
+    captureRuntimeContent(value: unknown): CapturedContent | undefined {
+        return this.captureLlmContent ? this.capture(value) : undefined;
+    }
+
     private capture(value: unknown): CapturedContent {
         const redacted = redactSensitiveText(safelySerialize(value));
         if (redacted.length <= this.maxContentChars) {

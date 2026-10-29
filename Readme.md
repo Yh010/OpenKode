@@ -130,6 +130,34 @@ OPENKODE_TELEMETRY_COLLECTOR_URL=http://<your-opencollector-host>/<telemetry-ing
 
 The remaining telemetry settings can stay at their defaults while getting started.
 
+New runs record the model's proposed route separately from the runtime's chosen route,
+agent retry links and reasons, and tool execution or validation rejection. The dashboard
+uses these records to explain why each call ran and what happened afterward. Older
+traces keep their original evidence; missing routing decisions cannot be backfilled.
+
+To include readable tasks, correction messages and tool payloads, enable
+`OPENKODE_TELEMETRY_CAPTURE_LLM_CONTENT=true`. These fields use the same redaction and
+length limits as existing model-content capture. With capture disabled, structural
+decisions, ownership links, context counts and execution outcomes are still recorded.
+Rebuild the core and restart the CLI after changing runtime code.
+
+For an explicit request to explain named files, the runtime reads those files from the
+current project before asking the model for an answer. The latest question and fresh
+contents are supplied separately from chat history. A failed read returns its actual
+error without generating an explanation. Relative paths, quoted paths with spaces,
+and absolute paths inside the current project are supported; outside-project paths
+remain blocked. This guarantees current file evidence, not that every model explanation
+is correct.
+
+File changes go through Planner and Coder. Orchestrator proposals cannot write files or
+claim a coding task completed directly. History is sent as background before the current
+task for each agent. Workers omit unrelated history for explicit named-file tasks;
+requests referring to earlier work retain it. Explicit new targets may be absent, while existing edit targets are
+read and edited through approved paths. A no-op write or an empty plan cannot count as
+completed implementation work. Coder responses are constrained to its accepted JSON
+protocol, and each call includes fresh contents, acceptance criteria, and the count of
+successful changes for the current plan step.
+
 Build the core package and CLI:
 
 ```powershell

@@ -14,7 +14,9 @@ export const SpanType = {
     LLM_STREAM: "llm.stream",
     PLANNER_RUN: "planner-run",
     CODER_RUN: "coder-run",
-    ORCHESTRATOR_RUN: "orchestrator-run"
+    ORCHESTRATOR_RUN: "orchestrator-run",
+    RUNTIME_DECISION: "runtime.decision",
+    TOOL_EXECUTION: "tool.execution"
 } as const;
 
 export type SpanType = typeof SpanType[keyof typeof SpanType];

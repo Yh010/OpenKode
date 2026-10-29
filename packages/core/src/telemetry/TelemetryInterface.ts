@@ -16,6 +16,7 @@ export interface TelemetryInterface{
         name: SpanType,
         operation: ()=> Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
+        errorMetadataFactory?: (error: unknown) => TelemetrySpanDetails | undefined,
     ) : Promise<T>;
     shutdown(): Promise<void> ;
 }
