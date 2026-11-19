@@ -6,6 +6,7 @@ import type { LLMResponse } from "./LLMResponse.js";
 import type { LLMUsage } from "./LLMUsage.js";
 
 export interface LLMProvider {
+    readonly info?: { provider: string; model: string };
     generate(request: LLMRequest): Promise<LLMResponse>;
     stream(request: LLMRequest,onChunk:(text:string)=>void): Promise<{usage: LLMUsage}>;
     generateForPlanner(request: OrchestratorResponse): Promise<PlannerResponse>; //TODO: Fix the type

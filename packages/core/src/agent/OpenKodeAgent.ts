@@ -1,4 +1,5 @@
 import type { LLMProvider } from "../llm/interface/LLMProvider.js";
+import { withModelUsage } from "../llm/usage.js";
 import type { LLMUsage } from "../llm/interface/LLMUsage.js";
 import { RuntimeRecorder } from "../telemetry/RuntimeRecorder.js";
 import type { RuntimeStep } from "../telemetry/RuntimeRecorder.js";
@@ -59,7 +60,7 @@ export class OpenKodeAgent {
     async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
         return this.telemetry.withRun(
             "openKode-run",
-            () => this.loop(prompt),
+            () => withModelUsage(() => this.loop(prompt)),
             result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, finalOutput: result.response }), ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
             prompt.ownership ? { ...prompt.ownership, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } : undefined,
         );

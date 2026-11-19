@@ -4,6 +4,7 @@ import { createOpenKodeAgent } from '@openkode/core';
 import { Command } from 'commander';
 import { runInteractiveChat } from "../interactiveChat.js";
 import { AuthenticatedSession, configureAuthNetwork } from "../auth/AuthenticatedSession.js";
+import { loadModelConfiguration } from "../model/ModelConfigurationStore.js";
 
 export function loadPromptCommand(program: Command) {
     program
@@ -18,7 +19,7 @@ export function loadPromptCommand(program: Command) {
             let openkode: ReturnType<typeof createOpenKodeAgent> | undefined;
             try {
                 const identity = await AuthenticatedSession.open();
-                openkode = createOpenKodeAgent({ accessToken: () => identity.token() });
+                openkode = createOpenKodeAgent({ accessToken: () => identity.token(), modelConfiguration: await loadModelConfiguration() });
                 console.log("\n🤖 OpenKode is thinking....\n");
                 const result = await openkode.run({prompt: prompt.join(" "), ownership: {
                     userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,

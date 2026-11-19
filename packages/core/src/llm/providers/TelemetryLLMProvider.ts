@@ -9,6 +9,7 @@ import { createCoderMessages, createPlannerMessages } from "../prompts/workerMes
 import type { LlmTelemetry } from "../../telemetry/TelemetryEventInterface.js";
 
 export class TelemetryLLMProvider implements LLMProvider {
+    get info() { return { provider: this.provider.info?.provider ?? "unknown", model: this.provider.info?.model ?? "unknown" }; }
     constructor(
         private readonly provider: LLMProvider,
         private readonly telemetry: TelemetryInterface,
@@ -67,8 +68,7 @@ export class TelemetryLLMProvider implements LLMProvider {
         const metadata = this.payloadPolicy.generationMetadata(input, output, streamOutputTruncated);
         const usage = extractUsage(output);
         const llm: LlmTelemetry = {
-            provider: "ollama",
-            model: "qwen2.5-coder:3b",
+            ...this.info,
             ...(usage ? usage : {}),
         };
         return { ...(metadata ? { metadata } : {}), llm };

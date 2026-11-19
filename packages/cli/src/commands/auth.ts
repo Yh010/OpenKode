@@ -11,8 +11,9 @@ async function openBrowser(url: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
         const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
             "Start-Process -FilePath ([Console]::In.ReadToEnd())"], { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
-        child.once("error", () => reject(new Error("Could not open your browser.")));
-        child.once("close", code => code === 0 ? resolve() : reject(new Error("Could not open your browser.")));
+        const timeout = setTimeout(() => { child.kill(); reject(new Error("Could not open your browser.")); }, 5_000);
+        child.once("error", () => { clearTimeout(timeout); reject(new Error("Could not open your browser.")); });
+        child.once("close", code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error("Could not open your browser.")); });
         child.stdin.on("error", () => {});
         child.stdin.end(url);
     });
@@ -41,8 +42,9 @@ function authAction(action: (api: SupabaseAuth, store: SessionStore) => Promise<
 }
 
 export function loadAuthCommands(program: Command): void {
-    program.command("login").description("Sign in to OpenKode with Google (Windows)")
-        .action(authAction(async (api, store) => {
+    const login = program.command("login").description("Sign in to OpenKode with Google (Windows)")
+        .option("--no-browser", "Print the sign-in URL without opening a browser");
+    login.action(authAction(async (api, store) => {
             if (process.platform !== "win32") throw new Error("Secure login currently supports Windows only.");
             const { verifier, challenge } = pkce();
             const abort = new AbortController();
@@ -56,8 +58,13 @@ export function loadAuthCommands(program: Command): void {
                     await store.save(tokens.refresh_token);
                     return user;
                 }, { signal: abort.signal });
-                console.log("Opening Google sign-in in your browser. Finish signing in there (3-minute timeout).");
-                await openBrowser(api.authorizeUrl(callback.redirect, challenge));
+                // Cancellation can happen while the OS is opening a browser.
+                void callback.result.catch(() => {});
+                const url = api.authorizeUrl(callback.redirect, challenge);
+                console.log(`Finish Google sign-in in your browser (3-minute timeout).\n${url}`);
+                if (login.opts().browser !== false) {
+                    await openBrowser(url).catch(() => console.log("Could not open your browser. Open the sign-in link above on this computer."));
+                }
                 const user = await callback.result as { id: string; email?: string };
                 console.log(`Signed in as ${user.email ?? user.id}.`);
             } finally {

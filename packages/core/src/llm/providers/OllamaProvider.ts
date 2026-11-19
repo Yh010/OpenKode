@@ -12,6 +12,8 @@ import { createCoderMessages, createPlannerMessages } from "../prompts/workerMes
 import { coderResponseSchema } from "./coderResponseSchema.js";
 
 export class OllamaProvider implements LLMProvider {
+    readonly info: { provider: string; model: string };
+    constructor(private readonly model = "qwen2.5-coder:3b") { this.info = { provider: "ollama", model }; }
     async generate(request: LLMRequest): Promise<LLMResponse> {
         const response = await fetch(
             "http://localhost:11434/api/chat",
@@ -21,7 +23,7 @@ export class OllamaProvider implements LLMProvider {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    model: "qwen2.5-coder:3b",
+                    model: this.model,
                     messages: request.messages,
                     stream: false
                 })
@@ -65,7 +67,7 @@ export class OllamaProvider implements LLMProvider {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    model: "qwen2.5-coder:3b",
+                    model: this.model,
                     messages,
                     stream: false,
                     format: role === "coder" ? coderResponseSchema : "json",
@@ -103,7 +105,7 @@ export class OllamaProvider implements LLMProvider {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "qwen2.5-coder:3b",
+                model: this.model,
                 messages: request.messages,
                 stream: true,
             }),

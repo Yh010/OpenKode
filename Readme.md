@@ -51,7 +51,7 @@ OpenKode sends batched telemetry events to the URL configured in `OPENKODE_TELEM
 
 ## Current state
 
-OpenKode is an active prototype, not yet a production-ready coding agent. It currently runs a local Ollama model (`qwen2.5-coder:3b`) and supports a small, controlled toolset.
+OpenKode is an active prototype with a small, controlled toolset. It supports local Ollama models and cloud models through the OpenAI and Anthropic APIs, using your own API key.
 
 ### Available tools
 
@@ -67,7 +67,7 @@ OpenKode is an active prototype, not yet a production-ready coding agent. It cur
 ### What works today
 
 - A CLI that accepts a natural-language request.
-- Local Ollama-backed orchestrator, planner, and coder workers.
+- Orchestrator, planner, and coder workers using Ollama, OpenAI, or Claude.
 - Direct file-content requests through `ReadFileTool`.
 - Direct file-creation/replacement requests through `WriteFileTool`.
 - Planner-led repository discovery with Glob and Read.
@@ -90,19 +90,18 @@ OpenKode can automatically run a small set of verification scripts after a chang
 
 ### Prerequisites
 
-- Node.js 24.14 or newer and pnpm
-- [Ollama](https://ollama.com/) running locally
-- The local model used by OpenKode:
+- Windows, Node.js 24.14 or newer, and pnpm (secure Google login and saved keys currently use Windows credential protection).
+- An OpenAI or Anthropic API key for cloud models, or [Ollama](https://ollama.com/) running locally. For the default local model:
 
   ```powershell
   ollama pull qwen2.5-coder:3b
   ```
 
-- A running OpenCollector instance with a telemetry ingestion endpoint
+- A Google account to sign in to OpenKode.
 
 ### 1. Set up OpenCollector
 
-Start OpenCollector separately and note the URL of its telemetry ingestion endpoint. OpenKode sends batched events to that endpoint.
+The example configuration uses the hosted OpenCollector endpoint. For a self-hosted collector, replace that URL with your HTTPS ingestion endpoint. You do not need to deploy a collector to try this checkout.
 
 The OpenKode runtime currently requires this endpoint; it will fail fast if `OPENKODE_TELEMETRY_COLLECTOR_URL` is not configured.
 
@@ -122,10 +121,10 @@ Create a local environment file from the example:
 Copy-Item .env.example .env
 ```
 
-Set the collector URL in `.env`:
+The collector URL in `.env` is:
 
 ```env
-OPENKODE_TELEMETRY_COLLECTOR_URL=http://<your-opencollector-host>/<telemetry-ingestion-path>
+OPENKODE_TELEMETRY_COLLECTOR_URL=https://openkode-collector.onrender.com/v1/telemetry/events
 ```
 
 The remaining telemetry settings can stay at their defaults while getting started.
@@ -257,9 +256,51 @@ in Supabase, so a Render restart does not erase them. Free Render instances
 sleep when idle; the first upload may take about a minute. Uploads retry once
 after a temporary failure and remain best-effort during longer outages.
 
-The agent still uses local Ollama. OpenAI/Claude provider support and npm
-distribution are separate follow-up work. Hosted dashboard AI analysis also
-needs a hosted model; trace viewing, charts and Excel exports work now.
+The CLI supports Ollama, OpenAI and Claude. npm distribution remains follow-up
+work. Hosted dashboard AI analysis separately needs a hosted model; trace
+viewing, charts and Excel exports work now.
+
+## Choose your model
+
+After building/linking the CLI, run:
+
+```powershell
+openkode configure
+openkode login
+openkode "your task"
+```
+
+`configure` asks for a provider, model ID, and (for OpenAI or Claude) an API key
+in a masked prompt. It saves settings to `~/.openkode/model.json`; the key is
+encrypted for the current Windows account. Switching to Ollama removes the
+saved cloud key. Your key is sent only to the selected provider's official API,
+in authentication headers. It is not sent to Supabase or OpenCollector.
+
+OpenAI uses the Responses API with response storage disabled. Claude uses the
+Messages API. Agent decisions use structured JSON outputs; usage traces record
+the actual provider/model and token counts. The CLI reports summed token usage
+for cloud calls in each run. No provider fallback happens silently.
+
+The initial model choices are `gpt-5.4-mini` and `claude-sonnet-4-6`; enter another
+supported model ID during configuration to change them. Models must support
+structured JSON outputs. Your provider controls availability, quotas, retention
+and billing. A ChatGPT or Claude chat subscription is not an API key.
+
+For an environment-based setup, use `OPENKODE_PROVIDER` (`ollama`, `openai`, or
+`anthropic`), optional `OPENKODE_MODEL`, and `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY`. Environment values override saved settings; they are never
+copied into the settings file. Avoid putting a real key in shell arguments or
+committing it to a project. Without configuration, existing local Ollama setups
+continue to use `qwen2.5-coder:3b`.
+
+If automatic browser opening fails during Google login, use the printed link on
+the same computer, or run `openkode login --no-browser`. Complete sign-in within
+three minutes.
+
+Provider references: [OpenAI Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses),
+[OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+[Claude Messages](https://platform.claude.com/docs/en/api/messages/create),
+[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs).
 
 ## Project structure
 

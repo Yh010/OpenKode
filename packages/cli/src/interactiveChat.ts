@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import { ChatStore, createOpenKodeAgent, type Chat } from "@openkode/core";
 import { AuthenticatedSession, configureAuthNetwork } from "./auth/AuthenticatedSession.js";
+import { loadModelConfiguration } from "./model/ModelConfigurationStore.js";
 
 const HELP = [
     "/new [title]    Start a new chat",
@@ -31,8 +32,10 @@ async function runSignedInChat(identity: AuthenticatedSession): Promise<void> {
     const store = await ChatStore.open(process.cwd(), undefined, identity.accountScope);
     let chat: Chat | undefined;
     let draftTitle = "New chat";
-    const agent = createOpenKodeAgent({ accessToken: () => identity.token() });
+    const modelConfiguration = await loadModelConfiguration();
+    const agent = createOpenKodeAgent({ accessToken: () => identity.token(), modelConfiguration });
     p.intro("OpenKode");
+    p.log.info(`Model: ${modelConfiguration.provider} / ${modelConfiguration.model}`);
     p.log.info("New chat draft — it will be saved after your first message.");
     p.log.message("Type /help for chat commands.");
 

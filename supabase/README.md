@@ -191,8 +191,36 @@ Test traces are labeled or content-free; these counts are not customer counts.
 The CLI's private local `.env` and public `.env.example` now point to the Render
 ingestion endpoint. Local JSONL history has not been uploaded. Hosted reads are
 bounded to 20,000 spans per filtered view; shorten the date range above that
-limit. Hosted AI analysis still needs a hosted model, and Google OAuth's public
-onboarding state has not been verified beyond the existing approved account.
+limit. Hosted AI analysis still needs a hosted model. The subsequent public
+signup check is documented below.
+
+## Public signup verification: 2026-11-19
+
+A second, owner-approved Google account completed sign-up without being added
+to Google's test-user list. Google's consent page requested only name/profile
+picture and email. The deployed dashboard then correctly refused operator
+access. An isolated CLI login registered that user's installation, session and
+chat, submitted one synthetic trace, and rejected a forged user ID. The normal
+user received 403 from dashboard APIs and no event rows directly from Supabase;
+the operator could see the same trace with the correct user/session/chat IDs.
+Smoke run: `2e5b27b1-eff3-4a82-9fd6-170eef4ba224`.
+
+The isolated CLI test session was revoked and its saved credentials removed.
+The normal test account and labeled trace remain for inspection; no operator
+permissions were granted. The main operator's browser login was preserved.
+
+Google's app remains External / Testing, with no sensitive or restricted scopes
+configured. Its basic-identity testing exception was verified with the second
+account. Publishing is currently disabled until the Google Branding setup is
+completed, and the consent screen still shows the Supabase project domain.
+This functional signup check does not claim that public branding is finished.
+See [Google's app-state rules](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview).
+
+Repeat the test only with permission for the chosen account, an isolated
+`OPENKODE_HOME`, and `EXPECTED_SIGNUP_TEST_EMAIL`; then run
+`pnpm --filter @openkode/cli exec tsx ../../supabase/tests/live-public-signup.mts`.
+The existing operator sign-in is used to inspect the accepted trace. The script
+revokes the isolated test sign-in and clears its local credentials afterward.
 
 Render uses a public Git repository source, so deploy future collector commits
 with **Manual Deploy → Deploy latest commit** in its console. Vercel is linked
