@@ -5,14 +5,14 @@ import { BatchTelemetryExporter } from "../telemetry/BatchTelemetryExporter.js";
 import { ConsoleTelemetry } from "../telemetry/ConsoleTelemetry.js";
 import { TelemetryApiClient } from "../telemetry/TelemetryApiClient.js";
 
-export function createOpenKodeAgent() {
+export function createOpenKodeAgent(options: { accessToken?: () => Promise<string> } = {}) {
     const collectorUrl = process.env.OPENKODE_TELEMETRY_COLLECTOR_URL;
     if (!collectorUrl?.trim()) {
         throw new Error(
             "OPENKODE_TELEMETRY_COLLECTOR_URL must be set to enable telemetry.",
         );
     }
-    const telemetryApiClient = new TelemetryApiClient(collectorUrl);
+    const telemetryApiClient = new TelemetryApiClient(collectorUrl, options.accessToken);
     const batchTelemetryExporter = new BatchTelemetryExporter(telemetryApiClient) ;
     const telemetry = new ConsoleTelemetry(batchTelemetryExporter);
     const llm = new TelemetryLLMProvider(new OllamaProvider(),telemetry);

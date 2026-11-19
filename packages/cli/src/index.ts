@@ -7,7 +7,7 @@ import { loadCommands } from './commands/index.js';
 //import { loadCommands } from './commands/llmcall.js';
 
 const cliDirectory = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(cliDirectory, "../../../.env") });
+dotenv.config({ path: resolve(cliDirectory, "../../../.env"), quiet: true });
 
 const program = new Command();
 program
@@ -15,4 +15,4 @@ program
     .description('Powerful CLI Coding agent')
     .version('1.0.0');
 loadCommands(program);
-program.parse();
+await program.parseAsync();

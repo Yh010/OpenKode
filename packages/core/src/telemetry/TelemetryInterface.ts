@@ -5,11 +5,19 @@ export interface TelemetrySpanDetails {
     llm?: LlmTelemetry;
 }
 
+export interface TelemetryOwnership {
+    userId: string;
+    installationId: string;
+    sessionId: string;
+    chatId?: string;
+}
+
 export interface TelemetryInterface{
     withRun<T>(
         name: string,
         operation: () => Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
+        ownership?: TelemetryOwnership,
     ): Promise<T>; // always creates type: "run"
     withSpan<T>(
         type:TelemetryEventType,

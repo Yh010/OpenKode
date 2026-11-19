@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import { ChatStore, createOpenKodeAgent, type Chat } from "@openkode/core";
+import { AuthenticatedSession, configureAuthNetwork } from "./auth/AuthenticatedSession.js";
 
 const HELP = [
     "/new [title]    Start a new chat",
@@ -17,10 +18,20 @@ export async function runInteractiveChat(): Promise<void> {
         return;
     }
 
-    const store = await ChatStore.open(process.cwd());
+    const restoreNetwork = configureAuthNetwork();
+    try {
+        await runSignedInChat(await AuthenticatedSession.open());
+    } catch (error) {
+        console.error(`[OpenKode] ${error instanceof Error ? error.message : "Could not start the coding session."}`);
+        process.exitCode = 1;
+    } finally { restoreNetwork(); }
+}
+
+async function runSignedInChat(identity: AuthenticatedSession): Promise<void> {
+    const store = await ChatStore.open(process.cwd(), undefined, identity.accountScope);
     let chat: Chat | undefined;
     let draftTitle = "New chat";
-    const agent = createOpenKodeAgent();
+    const agent = createOpenKodeAgent({ accessToken: () => identity.token() });
     p.intro("OpenKode");
     p.log.info("New chat draft — it will be saved after your first message.");
     p.log.message("Type /help for chat commands.");
@@ -47,12 +58,15 @@ export async function runInteractiveChat(): Promise<void> {
             if (commandResult.type === "handled") continue;
 
             if (!chat) chat = await store.create(draftTitle);
+            await identity.chat(chat.id);
             const history = chat.turns;
             chat = await store.append(chat.id, "user", prompt);
             const spinner = p.spinner();
             spinner.start("OpenKode is thinking");
             try {
-                const result = await agent.run({ prompt, chatId: chat.id, history }, () => {});
+                const result = await agent.run({ prompt, chatId: chat.id, history, ownership: {
+                    userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,
+                } }, () => {});
                 spinner.stop("OpenKode replied");
                 chat = await store.append(chat.id, "assistant", result.response);
                 p.note(result.response, "OpenKode");

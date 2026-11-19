@@ -32,6 +32,10 @@ export interface LlmTelemetry {
 }
 
 export interface TelemetryEventInterface {
+    userId?: string;
+    installationId?: string;
+    sessionId?: string;
+    chatId?: string;
     eventId: string; //identifies this stored telemetry record
     runId: string; //groups the whole user request
     spanId: string; //identifies a node in its trace tree

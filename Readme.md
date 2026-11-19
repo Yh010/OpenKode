@@ -90,7 +90,7 @@ OpenKode can automatically run a small set of verification scripts after a chang
 
 ### Prerequisites
 
-- Node.js and pnpm
+- Node.js 24.14 or newer and pnpm
 - [Ollama](https://ollama.com/) running locally
 - The local model used by OpenKode:
 
@@ -172,7 +172,52 @@ Set-Location packages/cli
 pnpm link --global
 ```
 
-### 3. Run OpenKode in a target project
+### 3. Sign in with Google (Windows)
+
+```powershell
+openkode login
+openkode whoami
+openkode logout
+```
+
+`login` opens your browser and waits up to three minutes for Google sign-in.
+It uses PKCE and a loopback-only callback on port 43821. Close any other OpenKode
+login before starting another. Authentication works independently of Ollama
+and OpenCollector. Google account creation/sign-in is currently configured in
+testing mode; public availability has not been verified.
+
+Only the Supabase refresh token is retained locally. It is encrypted using
+Windows DPAPI for your Windows account and saved under `~/.openkode/auth`
+(or `OPENKODE_HOME`). Access tokens and Google provider tokens are not saved.
+`whoami` refreshes the saved session and verifies your identity with Supabase.
+`logout` revokes this authentication session and removes local credentials;
+`logout --local` only removes local credentials, useful when the server cannot
+be reached. Already issued access tokens may remain valid until expiry.
+
+Secure session persistence currently supports Windows only. macOS and Linux
+credential-store integration remains pending. Authentication commands respect
+the configured HTTP(S) proxy and system certificate store. If a command crashes,
+its error may identify a stale `.lock` file: remove it only after confirming no
+authentication command is running.
+
+The default OpenKode Supabase URL and **public** client key are included in the
+CLI. For a self-hosted backend, set `OPENKODE_SUPABASE_URL` and
+`OPENKODE_SUPABASE_PUBLISHABLE_KEY`. Never use a secret or service-role key.
+Configure `http://127.0.0.1:43821/auth/callback/*` in that project's allowed
+redirect URLs. Google OAuth secrets stay in Supabase, never the CLI.
+
+Coding commands require sign-in. OpenKode registers an installation per account,
+a new CLI session per coding launch, and chat IDs when used. Every event carries
+user, installation, session, optional chat, and run IDs. Telemetry sends a
+Supabase bearer token over HTTPS or loopback HTTP. New run IDs are UUIDs;
+historical IDs remain unchanged. The collector verifies ownership before saving
+events; apply the run-registration migration and restart the collector.
+Only IDs go into the identity database; chat contents remain local.
+The collector's dashboard/read/export/analysis APIs require a verified Google
+account approved in its server-side `OPENCOLLECTOR_ADMIN_USER_IDS` setting.
+Ordinary CLI accounts can submit their own telemetry without dashboard access.
+
+### 4. Run OpenKode in a target project
 
 OpenKode uses the directory where the command is run as its project root. Move to the project you want it to inspect, then run a prompt:
 
@@ -188,7 +233,7 @@ Set-Location C:\path\to\your\project
 openkode
 ```
 
-Each interactive launch starts a new project-scoped chat. Use `/new`, `/chats`, `/rename <title>`, `/help`, and `/exit` inside the prompt. Chats are saved locally under `~/.openkode/chats` (or `OPENKODE_HOME` when set); only user prompts and final OpenKode responses are retained. The one-shot `openkode "prompt"` form remains available for scripts and does not create a saved chat.
+Each interactive launch starts a new project-scoped chat. Use `/new`, `/chats`, `/rename <title>`, `/help`, and `/exit` inside the prompt. Signed-in chats are saved under `~/.openkode/accounts/<account-hash>/chats` (or `OPENKODE_HOME` when set). Earlier unowned chats remain separate and are not automatically assigned to an account. Only user prompts and final responses are retained locally. One-shot prompts do not create saved chats.
 
 Useful checks:
 
@@ -196,6 +241,25 @@ Useful checks:
 openkode --version
 openkode --help
 ```
+
+## Hosted telemetry
+
+OpenCollector now runs at `https://openkode-collector.onrender.com`. Set
+`OPENKODE_TELEMETRY_COLLECTOR_URL` to
+`https://openkode-collector.onrender.com/v1/telemetry/events`, as shown in
+`.env.example`. Sign in with `openkode login` before starting a coding session.
+The CLI attaches verified account, installation and launch IDs to its traces.
+
+The internal operator dashboard is at
+`https://opencollector-dashboard.vercel.app`. Ordinary OpenKode accounts can
+upload their own traces but do not receive dashboard access. Traces are stored
+in Supabase, so a Render restart does not erase them. Free Render instances
+sleep when idle; the first upload may take about a minute. Uploads retry once
+after a temporary failure and remain best-effort during longer outages.
+
+The agent still uses local Ollama. OpenAI/Claude provider support and npm
+distribution are separate follow-up work. Hosted dashboard AI analysis also
+needs a hosted model; trace viewing, charts and Excel exports work now.
 
 ## Project structure
 

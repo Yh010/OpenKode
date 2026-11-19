@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
-import type { TelemetryInterface, TelemetrySpanDetails } from "./TelemetryInterface.js";
+import type { TelemetryInterface, TelemetrySpanDetails, TelemetryOwnership } from "./TelemetryInterface.js";
 import { randomUUID } from 'crypto';
 import type { TraceContext } from "./TraceContext.js";
 import type { SpanType, TelemetryEventInterface, TelemetryEventType } from "./TelemetryEventInterface.js";
@@ -42,11 +42,13 @@ export class ConsoleTelemetry implements TelemetryInterface{
         name: string,
         operation: () => Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
+        ownership?: TelemetryOwnership,
     ): Promise<T> {
-        const runId: string = "run"+randomUUID();
+        const runId: string = randomUUID();
         const rootSpanId: string = "rootSpan" + randomUUID() ;
 
         const rootContext: TraceContext = {
+            ...(ownership ? { ownership: { ...ownership } } : {}),
             runId,
             spanId: rootSpanId
         };
@@ -64,6 +66,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
             const details = this.createMetadataSafely(metadataFactory, resp);
             //const timeTaken = endTime-startTime ;
             const obj:TelemetryEventInterface = {
+                ...rootContext.ownership,
                 type: "run",
                 name: name,
                 eventId: `event-${randomUUID()}`,
@@ -83,6 +86,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         }catch(err){
             const endTime = new Date() ;
             const obj : TelemetryEventInterface = {
+                ...rootContext.ownership,
                 type:"run",
                 eventId: `event-${randomUUID()}`,
                 name,
@@ -118,6 +122,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         const spanId = "span" + randomUUID() ;
 
         const childContext: TraceContext = {
+            ...(parentContext.ownership ? { ownership: parentContext.ownership } : {}),
             runId: parentContext.runId,
             spanId,
             parentSpanId: parentContext.spanId,
@@ -138,6 +143,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
             const details = this.createMetadataSafely(metadataFactory, resp);
             //const timeTaken = endTime-startTime ;
             const obj:TelemetryEventInterface = {
+                ...childContext.ownership,
                 type,
                 name: name,
                 eventId: `event-${randomUUID()}`,
@@ -158,6 +164,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
             const endTime = new Date() ;
             const details = this.createMetadataSafely(errorMetadataFactory, err);
             const obj : TelemetryEventInterface = {
+                ...childContext.ownership,
                 type,
                 eventId: `event-${randomUUID()}`,
                 name,

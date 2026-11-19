@@ -60,7 +60,8 @@ export class OpenKodeAgent {
         return this.telemetry.withRun(
             "openKode-run",
             () => this.loop(prompt),
-            result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt }), finalOutput: result.response, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
+            result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, finalOutput: result.response }), ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
+            prompt.ownership ? { ...prompt.ownership, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } : undefined,
         );
     }
 

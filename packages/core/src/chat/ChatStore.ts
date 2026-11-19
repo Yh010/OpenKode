@@ -34,14 +34,15 @@ export class ChatStore {
         this.filePath = path.join(storageHome, "chats", `${projectHash}.json`);
     }
 
-    static async open(projectRoot: string, storageHome = process.env.OPENKODE_HOME ?? path.join(os.homedir(), ".openkode")): Promise<ChatStore> {
+    static async open(projectRoot: string, storageHome = process.env.OPENKODE_HOME ?? path.join(os.homedir(), ".openkode"), accountScope?: string): Promise<ChatStore> {
         let canonicalRoot: string;
         try {
             canonicalRoot = await realpath(projectRoot);
         } catch {
             canonicalRoot = path.resolve(projectRoot);
         }
-        return new ChatStore(canonicalRoot, storageHome);
+        const home = accountScope ? path.join(storageHome, "accounts", createHash("sha256").update(accountScope).digest("hex")) : storageHome;
+        return new ChatStore(canonicalRoot, home);
     }
 
     async list(): Promise<Chat[]> {

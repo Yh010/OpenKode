@@ -1,8 +1,9 @@
 // cli client
 
-import { createOpenKodeAgent, type AgentRequest } from '@openkode/core';
+import { createOpenKodeAgent } from '@openkode/core';
 import { Command } from 'commander';
 import { runInteractiveChat } from "../interactiveChat.js";
+import { AuthenticatedSession, configureAuthNetwork } from "../auth/AuthenticatedSession.js";
 
 export function loadPromptCommand(program: Command) {
     program
@@ -13,16 +14,15 @@ export function loadPromptCommand(program: Command) {
                 return;
             }
 
-            const openkode = createOpenKodeAgent();
-            // const response = await openkode.run({
-            //     prompt: prompt.join(" ")
-            // })
-            // console.log("\n🤖 OpenKode:\n");
-            // console.log(response.response);
-            console.log("\n🤖 OpenKode is thinking....\n");
-            console.log("\n🤖 OpenKode says:\n");
+            const restoreNetwork = configureAuthNetwork();
+            let openkode: ReturnType<typeof createOpenKodeAgent> | undefined;
             try {
-                const result = await openkode.run({prompt: prompt.join(" ")}, (chunk) => {
+                const identity = await AuthenticatedSession.open();
+                openkode = createOpenKodeAgent({ accessToken: () => identity.token() });
+                console.log("\n🤖 OpenKode is thinking....\n");
+                const result = await openkode.run({prompt: prompt.join(" "), ownership: {
+                    userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,
+                }}, (chunk) => {
                     process.stdout.write(chunk);
                 });
 
@@ -30,11 +30,11 @@ export function loadPromptCommand(program: Command) {
                 console.log(`\nInput tokens: ${result.usage.inputTokens}`);
                 console.log(`Output tokens: ${result.usage.outputTokens}`);
             } catch (error) {
-                console.error("\n[OpenKode][cli] Run failed.", error);
+                console.error(`[OpenKode] ${error instanceof Error ? error.message : "Could not start the coding session."}`);
                 process.exitCode = 1;
-            } finally{
-                await openkode.shutdown();
+            } finally {
+                await openkode?.shutdown();
+                restoreNetwork();
             }
-
         });
 }
