@@ -8,14 +8,18 @@ import type { CoderResponse } from "../../agent/interface/CoderResponsetypes.js"
 import { createCoderMessages, createPlannerMessages } from "../prompts/workerMessages.js";
 import { decisionSchema, parseDecision, type DecisionRole } from "./responseSchemas.js";
 import { recordModelUsage } from "../usage.js";
+import { reportAgentProgress } from "../../agent/AgentProgress.js";
 
 export type CloudProviderOptions = { provider: "openai" | "anthropic" | "gemini"; model: string; apiKey: string };
 type Result = { text: string; usage: LLMUsage };
 type Json = Record<string, any>;
+const MAX_RETRIES = 3;
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529]);
+const retryTiming = { wait: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)), random: () => Math.random() };
 
 export class CloudProvider implements LLMProvider {
     readonly info: { provider: string; model: string };
-    constructor(private readonly options: CloudProviderOptions, private readonly request: typeof fetch = fetch) {
+    constructor(private readonly options: CloudProviderOptions, private readonly request: typeof fetch = fetch, private readonly timing = retryTiming) {
         if (!["openai", "anthropic", "gemini"].includes(options.provider) || !options.model.trim() || !options.apiKey.trim() || /\s/.test(options.apiKey)) throw new Error("A provider, model and valid API key are required. Run openkode configure.");
         this.info = { provider: options.provider, model: options.model };
     }
@@ -50,24 +54,45 @@ export class CloudProvider implements LLMProvider {
             messages: messages.filter(message => message.role !== "system"),
             ...(schema ? { output_config: { format: { type: "json_schema", schema } } } : {}),
         };
-        let response: Response;
-        try {
-            const url = gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.options.model.replace(/^models\//, ""))}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`
-                : openai ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages";
-            response = await this.request(url, {
-                method: "POST", headers: { "Content-Type": "application/json",
-                    ...(gemini ? { "x-goog-api-key": this.options.apiKey } : { Authorization: `Bearer ${this.options.apiKey}` }),
-                    ...(this.options.provider === "anthropic" ? { "anthropic-version": "2026-10-21" } : {}) },
-                body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000),
-            });
-        } catch { throw new Error(`${this.info.provider} could not be reached. Check your connection and retry.`); }
-        if (!response.ok) {
+        const url = gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.options.model.replace(/^models\//, ""))}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`
+            : openai ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages";
+        const label = { openai: "OpenAI", anthropic: "Claude", gemini: "Gemini" }[this.options.provider];
+        const serialized = JSON.stringify(body);
+        // Retry only the model HTTP request. Never replay tools or an accepted stream.
+        for (let attempt = 0; ; attempt++) {
+            let response: Response;
+            try {
+                response = await this.request(url, {
+                    method: "POST", headers: { "Content-Type": "application/json",
+                        ...(gemini ? { "x-goog-api-key": this.options.apiKey } : { Authorization: `Bearer ${this.options.apiKey}` }),
+                        ...(this.options.provider === "anthropic" ? { "anthropic-version": "2026-10-21" } : {}) },
+                    body: serialized, redirect: "error", signal: AbortSignal.timeout(180_000),
+                });
+            } catch {
+                // A network failure may occur after the provider accepted the request;
+                // leave that ambiguous case to the user rather than duplicate it.
+                throw new Error(`${label} could not be reached. Check your connection and retry.`);
+            }
+            if (response.ok) return response;
             await response.body?.cancel().catch(() => {});
+            const retryAfter = retryAfterMs(response.headers.get("retry-after"));
+            if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES && retryAfter <= 30_000) {
+                const delay = Math.max(retryAfter, 1000 * 2 ** attempt + Math.floor(this.timing.random() * 250));
+                const reason = response.status === 429 ? "is rate limited" : response.status === 408 ? "timed out" : "is temporarily unavailable";
+                reportAgentProgress({ kind: "status", message: `${label} ${reason}. Retrying in ${Math.ceil(delay / 1000)} seconds · retry ${attempt + 1}/${MAX_RETRIES}` });
+                await this.timing.wait(delay);
+                reportAgentProgress({ kind: "status", message: `Waiting for ${label} · retry ${attempt + 1}/${MAX_RETRIES}` });
+                continue;
+            }
+            const retried = attempt ? ` after ${attempt} ${attempt === 1 ? "retry" : "retries"}` : "";
+            if (response.status >= 500 && RETRYABLE_STATUS.has(response.status)) {
+                throw new Error(`${label} is temporarily unavailable (HTTP ${response.status})${retried}. Please try again later.`);
+            }
+            if (response.status === 408) throw new Error(`${label} timed out (HTTP 408)${retried}. Please try again later.`);
             const help = response.status === 401 || response.status === 403 ? "Check your API key and model access with openkode configure."
-                : response.status === 429 ? "Check your provider quota or rate limit, then retry." : "Check the model ID and provider status, then retry.";
-            throw new Error(`${this.info.provider} request failed (HTTP ${response.status}). ${help}`);
+                : response.status === 429 ? "Check your provider quota or rate limit, then try again later." : "Check the model ID and provider status, then retry.";
+            throw new Error(`${label} request failed (HTTP ${response.status})${retried}. ${help}`);
         }
-        return response;
     }
     private async complete(messages: Message[], role?: DecisionRole): Promise<Result> {
         const started = performance.now();
@@ -131,6 +156,14 @@ export class CloudProvider implements LLMProvider {
         recordModelUsage(usage);
         return { usage };
     }
+}
+
+function retryAfterMs(value: string | null): number {
+    if (!value?.trim()) return 0;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const date = Date.parse(value);
+    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
 }
 
 function geminiCandidate(data: Json): Json | undefined {

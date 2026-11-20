@@ -13,7 +13,7 @@ const secret = "gemini-test-private-key";
 const messages = [{ role: "system" as const, content: "Be helpful." }, { role: "user" as const, content: "Hello" }, { role: "assistant" as const, content: "Hi" }, { role: "user" as const, content: "Continue" }];
 const metadata = { promptTokenCount: 12, cachedContentTokenCount: 4, candidatesTokenCount: 3, thoughtsTokenCount: 5 };
 const answer = (text = "Hello 世界", finishReason = "STOP") => ({ candidates: [{ content: { parts: [{ thought: true, text: "private thought" }, { text }] }, finishReason }], usageMetadata: metadata });
-const make = (response: () => Response) => new CloudProvider({ provider: "gemini", model: "gemini-4-hydrogen", apiKey: secret }, (async () => response()) as typeof fetch);
+const make = (response: () => Response) => new CloudProvider({ provider: "gemini", model: "gemini-4-hydrogen", apiKey: secret }, (async () => response()) as typeof fetch, { wait: async () => {}, random: () => 0 });
 
 test("Gemini selection uses its own key and model, with environment overrides", () => {
     const saved = { provider: "gemini" as const, model: "saved-model", apiKey: secret };

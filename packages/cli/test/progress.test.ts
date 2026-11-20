@@ -21,3 +21,15 @@ test("results can arrive without a spinner and do not leave one running", () => 
     display.finish("Done");
     assert.deepEqual(calls, ["Found 2 files", "a.ts\nb.ts"]);
 });
+
+test("plain terminal output prints each retry state once", { skip: Boolean(process.stdout.isTTY) }, context => {
+    const write = context.mock.method(process.stderr, "write", (() => true) as typeof process.stderr.write);
+    const display = createProgressDisplay();
+    display.update({ kind: "status", message: "Planning" });
+    display.update({ kind: "status", message: "Gemini unavailable. Retrying in 2 seconds" });
+    display.update({ kind: "status", message: "Waiting for Gemini" });
+    display.finish("OpenKode replied");
+    assert.deepEqual(write.mock.calls.map(call => String(call.arguments[0])), [
+        "[OpenKode] Planning\n", "[OpenKode] Gemini unavailable. Retrying in 2 seconds\n", "[OpenKode] Waiting for Gemini\n", "[OpenKode] OpenKode replied\n",
+    ]);
+});

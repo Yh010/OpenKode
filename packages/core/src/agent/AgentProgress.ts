@@ -4,18 +4,22 @@ import type { ToolResult } from "../tools/interface/Tool.js";
 
 export type AgentProgress = { kind: "status" | "result"; message: string; detail?: string };
 export type ProgressListener = (event: AgentProgress) => void;
+const listeners = new AsyncLocalStorage<ProgressListener>();
+
+export function reportAgentProgress(event: AgentProgress): void {
+    try {
+        listeners.getStore()?.({ kind: event.kind, message: preview(event.message, 1, 220),
+            ...(event.detail ? { detail: preview(event.detail) } : {}) });
+    } catch { /* A display failure must not interrupt the agent. */ }
+}
 
 /** Local execution updates, independent of telemetry and model reasoning. */
 export class ProgressReporter {
-    private readonly listeners = new AsyncLocalStorage<ProgressListener>();
     run<T>(listener: ProgressListener | undefined, operation: () => Promise<T>): Promise<T> {
-        return this.listeners.run(listener ?? (() => {}), operation);
+        return listeners.run(listener ?? (() => {}), operation);
     }
     emit(event: AgentProgress): void {
-        try {
-            this.listeners.getStore()?.({ kind: event.kind, message: preview(event.message, 1, 220),
-                ...(event.detail ? { detail: preview(event.detail) } : {}) });
-        } catch { /* A display failure must not interrupt the agent. */ }
+        reportAgentProgress(event);
     }
 }
 

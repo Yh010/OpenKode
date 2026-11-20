@@ -63,7 +63,7 @@ for (const provider of ["openai", "anthropic"] as const) {
     });
 
     test(`${provider} rejects incomplete JSON and sanitizes upstream failures`, async () => {
-        const make = (response: () => Response) => new CloudProvider({ provider, model: "selected", apiKey: secret }, (async () => response()) as typeof fetch);
+        const make = (response: () => Response) => new CloudProvider({ provider, model: "selected", apiKey: secret }, (async () => response()) as typeof fetch, { wait: async () => {}, random: () => 0 });
         for (const status of [401, 403, 429, 500]) {
             await assert.rejects(make(() => new Response(`secret body ${secret}`, { status })).generate({ messages }), error =>
                 error instanceof Error && error.message.includes(String(status)) && !error.message.includes(secret) && !error.message.includes("secret body"));

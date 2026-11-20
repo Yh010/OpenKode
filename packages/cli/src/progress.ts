@@ -9,7 +9,11 @@ export function createProgressDisplay(view?: ProgressView) {
             const spinner = p.spinner();
             view = { start: message => spinner.start(message), stop: message => spinner.stop(message), log: message => p.log.message(message) };
         } else {
-            const write = (message: string) => { process.stderr.write(`[OpenKode] ${message}\n`); };
+            let previous: string | undefined;
+            const write = (message: string) => {
+                if (message !== previous) process.stderr.write(`[OpenKode] ${message}\n`);
+                previous = message;
+            };
             view = { start: write, stop: write, log: write };
         }
     }

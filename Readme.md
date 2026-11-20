@@ -283,6 +283,13 @@ API key. Agent decisions use structured JSON outputs; usage traces record
 the actual provider/model and token counts. The CLI reports summed token usage
 for cloud calls in each run. No provider fallback happens silently.
 
+Temporary cloud-model HTTP errors retry up to three times with increasing delays
+and small random offsets. The CLI shows the wait time and retry number. Server
+`Retry-After` delays are respected up to 30 seconds; longer delays return a
+try-again-later message. Invalid credentials and request errors fail immediately.
+Retries cover the model request, without replaying tools or a stream that has
+already started returning output.
+
 The initial model choices are `gpt-5.4-mini`, `claude-sonnet-4-6` and
 `gemini-4-hydrogen`; enter another
 supported model ID during configuration to change them. Models must support
