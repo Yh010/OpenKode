@@ -156,6 +156,7 @@ jobs:
         shell: bash
         env:
           RELEASE_ACTION: ${{ needs.plan.outputs.action }}
+          NEW_PUBLICATION: ${{ needs.plan.outputs.publish }}
           RELEASE_VERSION: ${{ needs.plan.outputs.version }}
         run: |
           cd "$RUNNER_TEMP"
@@ -165,7 +166,9 @@ jobs:
             sleep 30
           done
           npm view "openkode@$RELEASE_VERSION" name version gitHead dist.shasum dist-tags.latest --json --registry=https://registry.npmjs.org/
-          test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$RELEASE_VERSION"
+          if [ "$RELEASE_ACTION" = verify-public ] || [ "$NEW_PUBLICATION" = true ]; then
+            test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$RELEASE_VERSION"
+          fi
           if [ "$RELEASE_ACTION" = publish ]; then
             test "$(npm view "openkode@$RELEASE_VERSION" gitHead --registry=https://registry.npmjs.org/)" = "$GITHUB_SHA"
           fi

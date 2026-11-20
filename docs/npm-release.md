@@ -1,9 +1,9 @@
 # npm releases
 
-## Published release
+## First release
 
-`openkode@1.0.0` was published on November 20, 2026. The public `latest` tag is
-`1.0.0`. Its SHA1 is `f42c03c8b1549144d5d7770646d56fe9176be710`, matching the
+`openkode@1.0.0` was published on November 20, 2026. The public `latest` tag was
+`1.0.0` when the first-release checks ran. Its SHA1 is `f42c03c8b1549144d5d7770646d56fe9176be710`, matching the
 archive tested before upload.
 
 - [Package on npm](https://www.npmjs.com/package/openkode)
@@ -35,7 +35,8 @@ Failed build or test jobs prevent publishing. A failure after publishing (such
 as public download propagation or tag creation) still reports a failed workflow;
 the already published version remains on npm. Rerun that workflow to finish its
 checks. A source commit already recorded in npm's `gitHead` reuses its version
-and is not published again. A registry error stops planning rather than guessing
+and is not published again. Rerunning an older release checks that version
+without moving npm's `latest` tag back. A registry error stops planning rather than guessing
 an available version.
 
 Releases run one at a time. GitHub queues up to 100 waiting runs in order of
