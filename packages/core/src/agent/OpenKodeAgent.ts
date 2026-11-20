@@ -26,6 +26,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolResult } from "../tools/interface/Tool.js";
 import { directFileRequestPaths, requestedFilePaths } from "./directFileRequest.js";
+import type { ProgressListener } from "./AgentProgress.js";
 //type ToolFunction = (argument: string) => Promise<string> | string;
 
 interface LoopResult {
@@ -54,16 +55,17 @@ export class OpenKodeAgent {
  * Runs the agent until it produces a final answer or reaches its limit.
  *
  * @param prompt - The user's request.
- * @param onChunk - Called whenever Ollama streams new text.
+ * @param onChunk - Reserved for streamed answer text.
+ * @param onProgress - Receives local execution updates and short tool results.
  * @returns The final response and token usage.
  */
-    async run(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
-        return this.telemetry.withRun(
+    async run(prompt: AgentRequest, onChunk: (text: string) => void, onProgress?: ProgressListener): Promise<LoopResult> {
+        return this.runtime.progress.run(onProgress, () => this.telemetry.withRun(
             "openKode-run",
             () => withModelUsage(() => this.loop(prompt)),
             result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, finalOutput: result.response }), ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
             prompt.ownership ? { ...prompt.ownership, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } : undefined,
-        );
+        ));
     }
 
     // private async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
@@ -190,6 +192,7 @@ export class OpenKodeAgent {
                 { role: "user", content: JSON.stringify({ request: prompt.prompt, context: { originalRequest: prompt.prompt, sourceFiles } }) },
             ];
             for (let attempt = 0; attempt < 2; attempt++) {
+                this.runtime.progress.emit({ kind: "status", message: "Explaining the files that were read" });
                 const decision = await this.llm.generateForOrchestrator({ messages });
                 modelDecision = decision;
                 if (decision.type === "final" && typeof decision.answer === "string" && decision.answer.trim()
@@ -222,7 +225,6 @@ export class OpenKodeAgent {
             ? [] : prompt.history ?? [];
         const isResearchRequest = isRepositoryResearchRequest(prompt.prompt);
 
-        console.log(`[OpenKode][orchestration] Started: ${prompt.prompt}`);
 
           const messages: Message[] = [
                 { role: "system", content: orchestratorSystemPrompt },
@@ -231,7 +233,6 @@ export class OpenKodeAgent {
             ];
 
         for (let step = 1; step <= maxSteps; step++) {
-            console.log(`[OpenKode][orchestration] Step ${step}/${maxSteps}: requesting a decision.`);
           
             const orchestratorStep = this.runtime.step("orchestrator", step, previousRuntimeStep?.stepId, { originalRequest: prompt.prompt, conversation: prompt.history ?? [] });
             let orchestratorResp: OrchestratorResponse;
@@ -239,7 +240,6 @@ export class OpenKodeAgent {
                 orchestratorResp = await this.runtime.agentCall(orchestratorStep, SpanType.ORCHESTRATOR_RUN, () => orchestrator.run({ messages }), { task: prompt.prompt, conversation: prompt.history ?? [] });
                 previousRuntimeStep = orchestratorStep;
             } catch (error) {
-                console.error(`[OpenKode][orchestration] Orchestrator failed at step ${step}.`, error);
                 throw error;
             }
 
@@ -254,10 +254,8 @@ export class OpenKodeAgent {
             }
 
             await this.runtime.route(orchestratorStep, modelDecision, orchestratorResp.type === "delegate" && !approvedPlan ? { ...orchestratorResp, agent: "planner" } : orchestratorResp, modelDecision !== orchestratorResp || orchestratorResp.type === "delegate" && orchestratorResp.agent === "coder" && !approvedPlan);
-            console.dir(orchestratorResp, { depth: null });
 
             if (orchestratorResp.type === "final") {
-                console.log(`[OpenKode][orchestration] Finished at step ${step}.`);
                 return { response: orchestratorResp.answer, usage: emptyUsage() };
             }
 
@@ -282,14 +280,12 @@ export class OpenKodeAgent {
                     });
 
                 }catch(err){
-                    console.log(`error calling ${orchestratorResp.toolName}:`) ;
-                    console.log(err) ;
+                    // RuntimeRecorder has already reported the tool failure.
                 }
 
                 continue ;
             }
 
-            console.log(`[OpenKode][orchestration] Delegating to ${orchestratorResp.agent}.`);
             try {
                 if (orchestratorResp.agent === "planner" || !approvedPlan) {
                     const repoFiles = repositoryFiles ?? await this.getRepositoryFiles();
@@ -437,7 +433,6 @@ export class OpenKodeAgent {
                                 continue;
                             }
                             if (Object.keys(sourceFiles).length > 0) {
-                                console.warn("[OpenKode][planner] Using a fallback plan because the planner requested context already supplied by the user or source files.");
                                 plan = createFallbackPlan(prompt.prompt, Object.keys(sourceFiles));
                                 break;
                             }
@@ -495,8 +490,6 @@ export class OpenKodeAgent {
                         role: "user",
                         content: `Planner result:\n${JSON.stringify(plan)}`,
                     });
-                    console.log(`[OpenKode][planner] Completed with result type "${plan.type}".`);
-                    console.dir(plan, { depth: null });
 
                     const codingFailure = await this.executeApprovedPlan(
                         plan,
@@ -520,7 +513,6 @@ export class OpenKodeAgent {
                     };
                 }
             } catch (error) {
-                console.error(`[OpenKode][orchestration] ${orchestratorResp.agent} failed at step ${step}.`, error);
                 throw error;
             }
         }
@@ -614,7 +606,6 @@ export class OpenKodeAgent {
                         role: "user",
                         content: `Coder result:\n${JSON.stringify(result)}`,
                     });
-                    console.log(`[OpenKode][coder] Verified completion after ${successfulToolCalls} successful tool call(s).`);
                     await this.runtime.transition(coderRuntimeStep, "coding_step_completed", { nextAgent: "runtime" });
                     completed = true;
                     break;
@@ -699,7 +690,6 @@ export class OpenKodeAgent {
                     usage: emptyUsage(),
                 };
             }
-            console.log(`[OpenKode][verification] ${requestedVerification} succeeded.`);
         }
     }
 
@@ -708,8 +698,10 @@ export class OpenKodeAgent {
     }
 
     private async getRepositoryFiles(): Promise<string[]> {
+        this.runtime.progress.emit({ kind: "status", message: "Scanning the repository" });
         const root = process.cwd();
         const graph = await RepoScanner(root);
+        this.runtime.progress.emit({ kind: "result", message: `Indexed ${graph.nodes.length} repository files` });
         return graph.nodes.map((node) => toRepositoryPath(root, node.path));
     }
 

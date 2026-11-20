@@ -2,6 +2,7 @@ import * as p from "@clack/prompts";
 import { ChatStore, createOpenKodeAgent, type Chat } from "@openkode/core";
 import { AuthenticatedSession, configureAuthNetwork } from "./auth/AuthenticatedSession.js";
 import { loadModelConfiguration } from "./model/ModelConfigurationStore.js";
+import { createProgressDisplay } from "./progress.js";
 
 const HELP = [
     "/new [title]    Start a new chat",
@@ -64,17 +65,16 @@ async function runSignedInChat(identity: AuthenticatedSession): Promise<void> {
             await identity.chat(chat.id);
             const history = chat.turns;
             chat = await store.append(chat.id, "user", prompt);
-            const spinner = p.spinner();
-            spinner.start("OpenKode is thinking");
+            const progress = createProgressDisplay();
             try {
                 const result = await agent.run({ prompt, chatId: chat.id, history, ownership: {
                     userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,
-                } }, () => {});
-                spinner.stop("OpenKode replied");
+                } }, () => {}, progress.update);
+                progress.finish("OpenKode replied");
                 chat = await store.append(chat.id, "assistant", result.response);
                 p.note(result.response, "OpenKode");
             } catch (error) {
-                spinner.stop("OpenKode could not complete the request");
+                progress.finish("OpenKode could not complete the request");
                 p.log.error(error instanceof Error ? error.message : String(error));
             }
         }

@@ -4,6 +4,7 @@ import type { ToolResult } from "../tools/interface/Tool.js";
 import { SpanType } from "./TelemetryEventInterface.js";
 import type { TelemetryInterface, TelemetrySpanDetails } from "./TelemetryInterface.js";
 import { TelemetryPayloadPolicy } from "./TelemetryPayloadPolicy.js";
+import { ProgressReporter, toolProgress } from "../agent/AgentProgress.js";
 
 export type RuntimeStep = {
     version: 1;
@@ -29,7 +30,7 @@ function decisionSummary(value: unknown): Record<string, unknown> {
 /** Records execution facts separately from model suggestions. Payloads obey the existing capture policy. */
 export class RuntimeRecorder {
     private readonly policy = TelemetryPayloadPolicy.fromEnvironment();
-    constructor(private readonly telemetry: TelemetryInterface) {}
+    constructor(private readonly telemetry: TelemetryInterface, readonly progress = new ProgressReporter()) {}
 
     step(agent: RuntimeStep["agent"], attempt: number, fromStepId: string | undefined, context?: Delegate["context"]): RuntimeStep {
         return {
@@ -59,10 +60,16 @@ export class RuntimeRecorder {
         return { metadata: { runtime: { ...step, modelDecision: decisionSummary(result) }, ...this.content({ input, task: fields.task, systemMessage: fields.feedback, modelOutput: result }) } };
     }
 
-    agentCall<T>(step: RuntimeStep, name: SpanType, operation: () => Promise<T>, input: unknown): Promise<T> {
-        return this.telemetry.withSpan("agent_step", name, operation,
+    async agentCall<T>(step: RuntimeStep, name: SpanType, operation: () => Promise<T>, input: unknown): Promise<T> {
+        const activities = { orchestrator: "Choosing the next action", planner: "Planning from repository evidence", coder: "Preparing changes and checking the result" };
+        this.progress.emit({ kind: "status", message: `${activities[step.agent]} · step ${step.attempt}` });
+        const result = await this.telemetry.withSpan("agent_step", name, operation,
             result => this.agentDetails(step,result,input),
             () => this.agentDetails(step,{type:"error"},input));
+        if (result && typeof result === "object" && "type" in result && result.type === "plan" && "summary" in result && typeof result.summary === "string") {
+            this.progress.emit({ kind: "result", message: "Proposed plan", detail: result.summary });
+        }
+        return result;
     }
 
     async transition(owner: RuntimeStep, reasonCode: string, facts: Record<string, unknown> = {}, content: Record<string, unknown> = {}): Promise<void> {
@@ -83,8 +90,9 @@ export class RuntimeRecorder {
     }
 
     async tool(owner: RuntimeStep, toolName: string, input: unknown, invoked: boolean, operation: () => Promise<ToolResult>, requestedBy: "model" | "runtime" = "model", validationRule?: string): Promise<ToolResult> {
+        this.progress.emit(toolProgress(toolName, input, undefined, invoked));
         try {
-            return await this.telemetry.withSpan("tool", SpanType.TOOL_EXECUTION, operation, result => ({
+            const result = await this.telemetry.withSpan("tool", SpanType.TOOL_EXECUTION, operation, result => ({
                 metadata: {
                     runtime: { version: 1, kind: "tool_result", ownerStepId: owner.stepId, toolName, toolInvoked: invoked, requestedBy,
                         outcome: result.ok ? "ok" : invoked ? "error" : "blocked", ...(!result.ok ? { errorCode: result.code } : {}), ...(!invoked && validationRule ? { validationRule } : {}) },
@@ -94,7 +102,10 @@ export class RuntimeRecorder {
                 runtime:{version:1,kind:"tool_result",ownerStepId:owner.stepId,toolName,toolInvoked:invoked,requestedBy,outcome:"error"},
                 ...this.content({toolInput:input,error:error instanceof Error ? error.message : String(error)}),
             }}));
+            this.progress.emit(toolProgress(toolName, input, result, invoked));
+            return result;
         } catch (error) {
+            this.progress.emit({ kind: "result", message: `${toolName} failed`, detail: error instanceof Error ? error.message : "The tool could not finish." });
             await this.transition(owner, "tool_threw", { toolName, toolInvoked: invoked }, { error: error instanceof Error ? error.message : String(error) });
             throw error;
         }

@@ -1,4 +1,5 @@
 export { OpenKodeAgent } from "./agent/OpenKodeAgent.js";
+export type { AgentProgress, ProgressListener } from "./agent/AgentProgress.js";
 
 export type { AgentRequest } from "./agent/interface/AgentRequest.js";
 

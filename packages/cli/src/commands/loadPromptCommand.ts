@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { runInteractiveChat } from "../interactiveChat.js";
 import { AuthenticatedSession, configureAuthNetwork } from "../auth/AuthenticatedSession.js";
 import { loadModelConfiguration } from "../model/ModelConfigurationStore.js";
+import { createProgressDisplay } from "../progress.js";
 
 export function loadPromptCommand(program: Command) {
     program
@@ -17,20 +18,22 @@ export function loadPromptCommand(program: Command) {
 
             const restoreNetwork = configureAuthNetwork();
             let openkode: ReturnType<typeof createOpenKodeAgent> | undefined;
+            const progress = createProgressDisplay();
             try {
                 const identity = await AuthenticatedSession.open();
                 openkode = createOpenKodeAgent({ accessToken: () => identity.token(), modelConfiguration: await loadModelConfiguration() });
-                console.log("\n🤖 OpenKode is thinking....\n");
                 const result = await openkode.run({prompt: prompt.join(" "), ownership: {
                     userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,
                 }}, (chunk) => {
                     process.stdout.write(chunk);
-                });
+                }, progress.update);
+                progress.finish("OpenKode replied");
 
                 console.log(result.response);
                 console.log(`\nInput tokens: ${result.usage.inputTokens}`);
                 console.log(`Output tokens: ${result.usage.outputTokens}`);
             } catch (error) {
+                progress.finish("OpenKode could not complete the request");
                 console.error(`[OpenKode] ${error instanceof Error ? error.message : "Could not start the coding session."}`);
                 process.exitCode = 1;
             } finally {

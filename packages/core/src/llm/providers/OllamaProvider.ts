@@ -58,7 +58,6 @@ export class OllamaProvider implements LLMProvider {
     }
 
     private async chatForJson<T>(role: string, messages: Message[]): Promise<T> {
-        console.log(`[OpenKode][${role}] Calling Ollama with ${messages.length} message(s).`);
         const response = await fetch(
             "http://localhost:11434/api/chat",
             {
@@ -76,26 +75,22 @@ export class OllamaProvider implements LLMProvider {
         );
 
         if (!response.ok) {
-            const body = await response.text();
-            console.error(`[OpenKode][${role}] Ollama returned HTTP ${response.status}.`, body);
-            throw new Error(`Ollama ${role} request failed: ${body}`);
+            await response.body?.cancel().catch(() => {});
+            throw new Error(`Ollama ${role} request failed (HTTP ${response.status}). Check Ollama and the configured model.`);
         }
 
         const data = await response.json();
         const content = data.message?.content;
         if (typeof content !== "string") {
-            console.error(`[OpenKode][${role}] Ollama response did not contain message.content.`, data);
             throw new Error(`Ollama ${role} response did not contain message.content`);
         }
 
         try {
             const result = JSON.parse(stripJsonCodeFence(content)) as T;
-            console.log(`[OpenKode][${role}] Received valid JSON response.`);
             return result;
         } catch (error) {
-            console.error(`[OpenKode][${role}] Expected JSON but received:`, content);
             throw new Error(
-                `Ollama ${role} response was not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+                `Ollama ${role} response was not valid JSON. Retry the request.`,
             );
         }
     }

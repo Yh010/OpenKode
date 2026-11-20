@@ -52,12 +52,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
             runId,
             spanId: rootSpanId
         };
-        console.log({
-            event: "span_started",
-            name,
-            runId,
-            spanId: rootSpanId,
-        });
         const startTime = new Date() ;
 
         try{
@@ -79,7 +73,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 ...(details?.metadata ? { metadata: details.metadata } : {}),
                 ...(details?.llm ? { llm: details.llm } : {}),
             }
-            console.log(obj);
             this.emitEventSafely(obj) ;
             return resp ;
 
@@ -100,7 +93,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 },
             }
             this.emitEventSafely(obj)
-            console.log(obj);
             throw err ;
         }
 
@@ -128,13 +120,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
             parentSpanId: parentContext.spanId,
         }
 
-        console.log({
-            event: "span_started",
-            name,
-            runId: childContext.runId,
-            spanId: childContext.spanId,
-            parentSpanId: childContext.parentSpanId
-        });
         const startTime = new Date() ;
 
          try{
@@ -156,7 +141,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 ...(details?.metadata ? { metadata: details.metadata } : {}),
                 ...(details?.llm ? { llm: details.llm } : {}),
             }
-            console.log(obj);
             this.emitEventSafely(obj)
             return resp ;
 
@@ -181,7 +165,6 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 ...(details?.llm ? { llm: details.llm } : {}),
             }
             this.emitEventSafely(obj)
-            console.log(obj);
             throw err ;
         }
     }
