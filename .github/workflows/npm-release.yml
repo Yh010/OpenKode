@@ -131,5 +131,7 @@ jobs:
             if [ "$attempt" = 3 ]; then exit 1; fi
             sleep 20
           done
+          npm view "openkode@$version" name version dist.shasum dist-tags.latest --json --registry=https://registry.npmjs.org/
+          test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$version"
           test "$(openkode --version)" = "$version"
           openkode --help
