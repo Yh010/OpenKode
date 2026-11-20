@@ -145,6 +145,7 @@ truncated fields are marked. `OPENKODE_TELEMETRY_LLM_MAX_CONTENT_CHARS` changes 
 cap. These are bounded evaluation records, not guaranteed full transcripts.
 With capture disabled, structural decisions, ownership links, context counts and
 execution outcomes are still recorded.
+Failed runs also retain the original request and any partial displayed answer. Failed model calls retain input messages, received partial output, provider/model, errors and HTTP retry attempts. Incomplete output and partial usage are marked. Content capture settings and the existing size cap still apply.
 Rebuild the core and restart the CLI after changing runtime code.
 
 For an explicit request to explain named files, the runtime reads those files from the

@@ -10,6 +10,7 @@ import { decisionSchema, parseDecision, type DecisionRole } from "./responseSche
 import { recordModelUsage } from "../usage.js";
 import { reportAgentProgress } from "../../agent/AgentProgress.js";
 import { decisionStream } from "../DecisionStream.js";
+import { captureModelText, captureModelAttempt, captureModelUsage } from "../../telemetry/ModelCallCapture.js";
 
 export type CloudProviderOptions = { provider: "openai" | "anthropic" | "gemini"; model: string; apiKey: string };
 type Result = { text: string; usage: LLMUsage };
@@ -78,15 +79,17 @@ export class CloudProvider implements LLMProvider {
                     body: serialized, redirect: "error", signal: AbortSignal.timeout(180_000),
                 });
             } catch {
+                captureModelAttempt({ attempt: attempt + 1, outcome: "network_error" });
                 // A network failure may occur after the provider accepted the request;
                 // leave that ambiguous case to the user rather than duplicate it.
                 throw new Error(`${label} could not be reached. Check your connection and retry.`);
             }
-            if (response.ok) return response;
+            if (response.ok) { captureModelAttempt({ attempt: attempt + 1, status: response.status, outcome: "ok" }); return response; }
             await response.body?.cancel().catch(() => {});
             const retryAfter = retryAfterMs(response.headers.get("retry-after"));
             if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES && retryAfter <= 30_000) {
                 const delay = Math.max(retryAfter, 1000 * 2 ** attempt + Math.floor(this.timing.random() * 250));
+                captureModelAttempt({ attempt: attempt + 1, status: response.status, outcome: "http_error", retryInMs: delay });
                 const reason = response.status === 429 ? "is rate limited" : response.status === 408 ? "timed out" : "is temporarily unavailable";
                 reportAgentProgress({ kind: "status", message: `${label} ${reason}. Retrying in ${Math.ceil(delay / 1000)} seconds · retry ${attempt + 1}/${MAX_RETRIES}` });
                 await this.timing.wait(delay);
@@ -94,6 +97,7 @@ export class CloudProvider implements LLMProvider {
                 continue;
             }
             const retried = attempt ? ` after ${attempt} ${attempt === 1 ? "retry" : "retries"}` : "";
+            captureModelAttempt({ attempt: attempt + 1, status: response.status, outcome: "http_error" });
             if (response.status >= 500 && RETRYABLE_STATUS.has(response.status)) {
                 throw new Error(`${label} is temporarily unavailable (HTTP ${response.status})${retried}. Please try again later.`);
             }
@@ -107,25 +111,30 @@ export class CloudProvider implements LLMProvider {
         const started = performance.now();
         const response = await this.start(messages, false, role);
         let data: Json;
-        try { data = await response.json() as Json; } catch { throw new Error("The provider returned an invalid response."); }
+        const raw = await response.text();
+        try { data = JSON.parse(raw) as Json; } catch { captureModelText(raw); throw new Error("The provider returned an invalid response."); }
         const openai = this.options.provider === "openai";
         if (!data || typeof data !== "object") throw new Error("The provider returned an invalid response.");
         if (this.options.provider === "gemini") {
             const candidate = geminiCandidate(data);
-            if (candidate?.finishReason !== "STOP") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
             const text = geminiText(candidate);
+            captureModelText(text);
+            if (candidate?.finishReason !== "STOP") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
             if (!text) throw new Error("The provider returned no text.");
             const usage = geminiUsage(data.usageMetadata, performance.now() - started);
+            captureModelUsage(usage);
             recordModelUsage(usage);
             return { text, usage };
         }
-        if (openai ? data.status !== "completed" : data.stop_reason !== "end_turn") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
         if (!Array.isArray(openai ? data.output : data.content)) throw new Error("The provider returned an invalid response.");
         const blocks = openai ? data.output.filter((item: Json) => item?.type === "message").flatMap((item: Json) => Array.isArray(item.content) ? item.content : []) : data.content;
         if (blocks.some((block: Json) => block?.type === "refusal")) throw new Error("The model declined this request.");
         const text = blocks.filter((block: Json) => block?.type === (openai ? "output_text" : "text") && typeof block.text === "string").map((block: Json) => block.text).join("");
+        captureModelText(text);
+        if (openai ? data.status !== "completed" : data.stop_reason !== "end_turn") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
         if (!text || typeof text !== "string") throw new Error("The provider returned no text.");
         const usage = usageFrom(data.usage, performance.now() - started);
+        captureModelUsage(usage);
         recordModelUsage(usage);
         return { text, usage };
     }
@@ -133,6 +142,7 @@ export class CloudProvider implements LLMProvider {
         return this.streamMessages(request.messages, onChunk);
     }
     private async streamMessages(messages: Message[], onChunk: (text: string) => void, role?: DecisionRole): Promise<{ usage: LLMUsage }> {
+        const emit = (text: string) => { captureModelText(text); onChunk(text); };
         const started = performance.now();
         const response = await this.start(messages, true, role);
         let usage: LLMUsage | undefined;
@@ -142,25 +152,26 @@ export class CloudProvider implements LLMProvider {
             if (this.options.provider === "gemini") {
                 if (finished && event.candidates?.length) throw new Error("The provider sent content after stream completion.");
                 const candidate = geminiCandidate(event);
-                if (candidate?.finishReason && candidate.finishReason !== "STOP") throw new Error("The model did not finish its answer.");
                 const text = geminiText(candidate);
-                if (text) onChunk(text);
+                if (candidate?.finishReason && candidate.finishReason !== "STOP") { captureModelText(text); throw new Error("The model did not finish its answer."); }
+                if (text) emit(text);
                 // Early chunks may report only prompt usage; final metadata is cumulative.
                 if (event.usageMetadata) geminiMetadata = event.usageMetadata;
                 if (candidate?.finishReason === "STOP") finished = true;
                 continue;
             }
             if (["error", "response.failed", "response.incomplete"].includes(event.type)) throw new Error("The provider could not finish the stream. Retry the request.");
-            if (event.type === "response.output_text.delta" && typeof event.delta === "string") onChunk(event.delta);
+            if (event.type === "response.output_text.delta" && typeof event.delta === "string") emit(event.delta);
             if (event.type === "response.refusal.delta") throw new Error("The model declined this request.");
             if (event.type === "response.completed") { usage = usageFrom(event.response?.usage, performance.now() - started); finished = true; }
             if (event.type === "message_start") usage = usageFrom(event.message?.usage, 0);
-            if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && typeof event.delta.text === "string") onChunk(event.delta.text);
+            if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && typeof event.delta.text === "string") emit(event.delta.text);
             if (event.type === "message_delta") {
                 if (event.delta?.stop_reason && event.delta.stop_reason !== "end_turn") throw new Error("The model did not finish its answer.");
                 if (usage && typeof event.usage?.output_tokens === "number") usage.outputTokens = event.usage.output_tokens;
             }
             if (event.type === "message_stop") finished = true;
+            captureModelUsage(usage);
         }
         if (this.options.provider === "gemini" && finished && geminiMetadata) usage = geminiUsage(geminiMetadata, 0);
         if (!finished || !usage) throw new Error("The provider stream ended before completion.");

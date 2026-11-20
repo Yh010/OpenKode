@@ -28,6 +28,7 @@ import type { ToolResult } from "../tools/interface/Tool.js";
 import { directFileRequestPaths, requestedFilePaths } from "./directFileRequest.js";
 import type { ProgressListener } from "./AgentProgress.js";
 import { withAnswerOutput, withDecisionOutput } from "../llm/DecisionStream.js";
+import { TelemetryPayloadPolicy } from "../telemetry/TelemetryPayloadPolicy.js";
 //type ToolFunction = (argument: string) => Promise<string> | string;
 
 interface LoopResult {
@@ -61,11 +62,15 @@ export class OpenKodeAgent {
  * @returns The final response and token usage.
  */
     async run(prompt: AgentRequest, onChunk: (text: string) => void, onProgress?: ProgressListener): Promise<LoopResult> {
-        return withAnswerOutput(prompt.stream ? onChunk : undefined, () => this.runtime.progress.run(onProgress, () => this.telemetry.withRun(
+        const partial = TelemetryPayloadPolicy.fromEnvironment().createStreamCapture();
+        return withAnswerOutput(prompt.stream ? text => { partial.append(text); onChunk(text); } : undefined, () => this.runtime.progress.run(onProgress, () => this.telemetry.withRun(
             "openKode-run",
             () => withModelUsage(() => this.loop(prompt)),
             result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, finalOutput: result.response }), ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
             prompt.ownership ? { ...prompt.ownership, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } : undefined,
+            error => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, history: prompt.history,
+                partialOutput: partial.getValue().value, error: error instanceof Error ? error.message : String(error) }),
+                incomplete: true, partialOutputTruncated: partial.getValue().truncated, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
         )));
     }
 

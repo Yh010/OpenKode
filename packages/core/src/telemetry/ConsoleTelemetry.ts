@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import type { TraceContext } from "./TraceContext.js";
 import type { SpanType, TelemetryEventInterface, TelemetryEventType } from "./TelemetryEventInterface.js";
 import type { TelemetryExporterInterface } from "./TelemetryExporterInterface.js";
+import { telemetryErrorMessage } from "./TelemetryPayloadPolicy.js";
 
 export class ConsoleTelemetry implements TelemetryInterface{
 
@@ -43,6 +44,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
         operation: () => Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
         ownership?: TelemetryOwnership,
+        errorMetadataFactory?: (error: unknown) => TelemetrySpanDetails | undefined,
     ): Promise<T> {
         const runId: string = randomUUID();
         const rootSpanId: string = "rootSpan" + randomUUID() ;
@@ -78,6 +80,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
 
         }catch(err){
             const endTime = new Date() ;
+            const details = this.createMetadataSafely(errorMetadataFactory, err);
             const obj : TelemetryEventInterface = {
                 ...rootContext.ownership,
                 type:"run",
@@ -89,8 +92,10 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 endedAt: endTime.toISOString(),
                 status: "error",
                 metadata:{
-                    error: err instanceof Error ? err.message : String(err),
+                    error: telemetryErrorMessage(err),
+                    ...details?.metadata,
                 },
+                ...(details?.llm ? { llm: details.llm } : {}),
             }
             this.emitEventSafely(obj)
             throw err ;
@@ -159,7 +164,7 @@ export class ConsoleTelemetry implements TelemetryInterface{
                 endedAt: endTime.toISOString(),
                 status: "error",
                 metadata:{
-                    error: err instanceof Error ? err.message : String(err),
+                    error: telemetryErrorMessage(err),
                     ...details?.metadata,
                 },
                 ...(details?.llm ? { llm: details.llm } : {}),

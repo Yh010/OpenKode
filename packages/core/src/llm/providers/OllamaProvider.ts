@@ -12,6 +12,7 @@ import { createCoderMessages, createPlannerMessages } from "../prompts/workerMes
 import { coderResponseSchema } from "./coderResponseSchema.js";
 import { decisionStream } from "../DecisionStream.js";
 import { recordModelUsage } from "../usage.js";
+import { captureModelText, captureModelUsage } from "../../telemetry/ModelCallCapture.js";
 
 export class OllamaProvider implements LLMProvider {
     readonly info: { provider: string; model: string };
@@ -93,6 +94,7 @@ export class OllamaProvider implements LLMProvider {
 
         const data = await response.json();
         const content = data.message?.content;
+        if (typeof content === "string") captureModelText(content);
         if (typeof content !== "string") {
             throw new Error(`Ollama ${role} response did not contain message.content`);
         }
@@ -145,7 +147,7 @@ export class OllamaProvider implements LLMProvider {
                 let chunk;
                 try { chunk = JSON.parse(line); } catch { throw new Error("Ollama returned an invalid stream event."); }
                 if (chunk.error) throw new Error("Ollama could not finish the stream.");
-                if (typeof chunk.message?.content === "string") onChunk(chunk.message.content);
+                if (typeof chunk.message?.content === "string") { captureModelText(chunk.message.content); onChunk(chunk.message.content); }
                 if(chunk.done){
                     usage = {
                         inputTokens: chunk.prompt_eval_count,
@@ -154,6 +156,7 @@ export class OllamaProvider implements LLMProvider {
                         promptEvalDurationNs: chunk.prompt_eval_duration ?? 0,
                         evalDurationNs: chunk.eval_duration ?? 0,
                     };
+                    captureModelUsage(usage);
                 }
             }
             if (done) break;

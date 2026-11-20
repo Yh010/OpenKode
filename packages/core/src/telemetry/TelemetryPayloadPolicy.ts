@@ -152,3 +152,7 @@ function redactSensitiveText(value: string): string {
         .replace(/((?:api[_-]?key|password|secret|token)["']?\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]")
         .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]");
 }
+
+export function telemetryErrorMessage(error: unknown): string {
+    return redactSensitiveText(error instanceof Error ? error.message : String(error));
+}

@@ -18,6 +18,7 @@ export interface TelemetryInterface{
         operation: () => Promise<T>,
         metadataFactory?: (result: T) => TelemetrySpanDetails | undefined,
         ownership?: TelemetryOwnership,
+        errorMetadataFactory?: (error: unknown) => TelemetrySpanDetails | undefined,
     ): Promise<T>; // always creates type: "run"
     withSpan<T>(
         type:TelemetryEventType,

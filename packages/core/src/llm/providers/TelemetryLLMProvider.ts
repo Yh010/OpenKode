@@ -6,6 +6,7 @@ import type { LLMRequest } from "../interface/LLMRequest.js";
 import type { LLMUsage } from "../interface/LLMUsage.js";
 import { TelemetryPayloadPolicy } from "../../telemetry/TelemetryPayloadPolicy.js";
 import { createCoderMessages, createPlannerMessages } from "../prompts/workerMessages.js";
+import { ModelCallCapture } from "../../telemetry/ModelCallCapture.js";
 import type { LlmTelemetry } from "../../telemetry/TelemetryEventInterface.js";
 
 export class TelemetryLLMProvider implements LLMProvider {
@@ -18,50 +19,44 @@ export class TelemetryLLMProvider implements LLMProvider {
 
     async generateForPlanner(request: OrchestratorResponse) {
         const telemetryInput = { messages: createPlannerMessages(request) };
-        return this.telemetry.withSpan("generation", SpanType.LLM_PLANNER,
-            () => this.provider.generateForPlanner(request),
-            (response) => this.generationDetails(telemetryInput, response),
-        );
+        return this.observe(SpanType.LLM_PLANNER, telemetryInput, () => this.provider.generateForPlanner(request));
     }
 
     async generateForOrchestrator(request: LLMRequest) {
-        return this.telemetry.withSpan("generation",SpanType.LLM_ORCHESTRATOR,
-            () => this.provider.generateForOrchestrator(request),
-            (response) => this.generationDetails(request, response),
-        );
+        return this.observe(SpanType.LLM_ORCHESTRATOR, request, () => this.provider.generateForOrchestrator(request));
     }
 
     async generateForCoder(request: OrchestratorResponse) {
         const telemetryInput = { messages: createCoderMessages(request) };
-        return this.telemetry.withSpan("generation",SpanType.LLM_CODER,
-            () => this.provider.generateForCoder(request),
-            (response) => this.generationDetails(telemetryInput, response),
-        );
+        return this.observe(SpanType.LLM_CODER, telemetryInput, () => this.provider.generateForCoder(request));
     }
 
     async generate(request: LLMRequest) {
-        return this.telemetry.withSpan("generation",SpanType.LLM_GENERATE,
-            () => this.provider.generate(request),
-            (response) => this.generationDetails(request, response),
-        );
+        return this.observe(SpanType.LLM_GENERATE, request, () => this.provider.generate(request));
     }
 
     async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<{ usage: LLMUsage }> {
         const streamCapture = this.payloadPolicy.createStreamCapture();
-        return this.telemetry.withSpan("generation",SpanType.LLM_STREAM,
-            () => this.provider.stream(request, (text) => {
-                streamCapture.append(text);
-                onChunk(text);
-            }),
-            (response) => {
-                const output = streamCapture.getValue();
-                return this.generationDetails(
-                    request,
-                    { response: output.value, usage: response.usage },
-                    output.truncated,
-                );
-            },
-        );
+        return this.observe(SpanType.LLM_STREAM, request, () => this.provider.stream(request, text => {
+            streamCapture.append(text);
+            onChunk(text);
+        }), () => streamCapture.getValue());
+    }
+
+    private observe<T>(name: typeof SpanType[keyof typeof SpanType], input: LLMRequest, operation: () => Promise<T>, streamed?: () => { value: string; truncated: boolean }): Promise<T> {
+        const capture = new ModelCallCapture(this.payloadPolicy);
+        return this.telemetry.withSpan("generation", name, () => capture.run(operation), result => {
+            const output = streamed?.();
+            const details = this.generationDetails(input, output ? { response: output.value, ...(result as object) } : result, output?.truncated);
+            return { ...details, metadata: { ...details.metadata, ...(capture.attempts.length ? { attempts: capture.attempts } : {}) } };
+        }, error => {
+            const recorded = capture.output.getValue();
+            const output = recorded.value ? recorded : streamed?.() ?? recorded;
+            const message = error instanceof Error ? error.message : String(error);
+            const details = this.generationDetails(input, { error: message, partialOutput: output.value, ...(capture.usage ? { usage: capture.usage } : {}) }, output.truncated);
+            return { ...details, metadata: { ...details.metadata, incomplete: true, partialOutputAvailable: Boolean(output.value),
+                ...(capture.usage ? { usageIncomplete: true } : {}), ...(capture.attempts.length ? { attempts: capture.attempts } : {}) } };
+        });
     }
 
     private generationDetails(input: { messages: { role: string; content: string }[] }, output: unknown, streamOutputTruncated = false) {
