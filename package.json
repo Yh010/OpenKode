@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "build": "pnpm --filter @openkode/core build && pnpm --filter openkode build",
-    "test": "pnpm --filter @openkode/core test && pnpm --filter openkode test",
+    "test": "node --test scripts/test/*.test.mjs && pnpm --filter @openkode/core test && pnpm --filter openkode test",
     "pack:cli": "pnpm --filter openkode pack --pack-destination .cache/npm-release",
     "test:package": "node scripts/smoke-package.mjs"
   },

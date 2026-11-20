@@ -391,19 +391,17 @@ calls and does not use an existing account. GitHub Actions also runs the native
 macOS Keychain test and package installation on Windows and macOS. The release check writes `smoke-report.json` with the tested
 tarball's SHA-256 and covered steps.
 
-For GitHub-hosted builds and publishing, use the manual **npm release** workflow.
-The first release uses a stage-only npm token saved in the repository's private
-Actions secrets, then the account owner approves the version on npmjs.com. Later
-releases can use npm trusted publishing without a saved token. See
-[the release instructions](docs/npm-release.md).
+Every push or merge to `main` starts the **npm release** workflow. It selects the
+next patch version, tests the exact archive on Windows and macOS, publishes it
+through npm trusted publishing, records the source commit in a Git tag, and
+checks public installation. A failed build or test blocks publication. Rerunning
+a commit already published reuses that release rather than publishing again.
 
-Alternatively, publish the exact tested tarball from an allowed network using an npm account authorized for `openkode`:
+The release version is written into CI's package before building; the repository
+manifest remains the starting version. npm versions, Git tags and package
+`gitHead` record published releases. The workflow does not create version-only
+commits. Use its manual `validate` and `verify-public` actions for checks.
 
-```sh
-npm login --registry=https://registry.npmjs.org/
-npm publish .cache/npm-release/openkode-1.0.0.tgz --access public --registry=https://registry.npmjs.org/
-```
-
-Use the tarball matching the package version and the smoke report. Publishing
-requires registry access and whatever authentication npm asks the account to
-complete. Website sign-in and CLI sign-in are separate.
+See [the release instructions](docs/npm-release.md) for the npm connection,
+version policy, queue limits and recovery steps. Users update installed copies
+with `npm install -g openkode@latest`.

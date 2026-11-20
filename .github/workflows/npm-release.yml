@@ -1,17 +1,15 @@
 name: npm release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
-        description: Validate, stage the first release, or publish using npm trusted publishing
+        description: Validate, publish the next version, or verify the public release
         type: choice
         default: validate
-        options:
-          - validate
-          - stage
-          - publish
-          - verify-public
+        options: [validate, publish, verify-public]
 
 permissions:
   contents: read
@@ -19,10 +17,29 @@ permissions:
 concurrency:
   group: npm-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+      action: ${{ steps.version.outputs.action }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - id: version
+        env:
+          RELEASE_ACTION: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' && 'publish' || inputs.action) || 'validate' }}
+        run: node scripts/release-version.mjs plan
+
   build:
-    if: github.ref == 'refs/heads/main' && inputs.action != 'verify-public'
+    needs: plan
+    if: needs.plan.outputs.action == 'validate' || needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,7 +49,12 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
+      - name: Set the version being built and tested
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/release-version.mjs prepare
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node --test scripts/test/*.test.mjs
       - run: pnpm build
       - run: pnpm pack:cli
       - name: Check package contents
@@ -45,7 +67,7 @@ jobs:
           if-no-files-found: error
 
   verify:
-    needs: build
+    needs: [plan, build]
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +81,9 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
+      - env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/release-version.mjs prepare
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - run: pnpm test
@@ -75,8 +100,8 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: inputs.action == 'stage' || inputs.action == 'publish'
-    needs: [build, verify]
+    if: needs.plan.outputs.publish == 'true'
+    needs: [plan, build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -86,30 +111,35 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-          registry-url: https://registry.npmjs.org/
-      - name: Install npm with staged publishing support
-        run: npm install --global npm@11.21.3 --ignore-scripts
+      - run: npm install --global npm@11.21.3 --ignore-scripts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: npm-package
           path: release
-      - name: Stage first release for approval on npmjs.com
-        if: inputs.action == 'stage'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo 'Add the npm stage-only token as the NPM_TOKEN repository secret first.'
-            exit 1
-          fi
-          npm stage publish ./release/openkode-*.tgz --access public --registry=https://registry.npmjs.org/
-      - name: Publish through npm trusted publishing
-        if: inputs.action == 'publish'
+      - name: Publish the tested archive using npm trusted publishing
         run: npm publish ./release/openkode-*.tgz --access public --provenance --registry=https://registry.npmjs.org/
 
+  record:
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.action == 'publish' && (needs.release.result == 'success' || needs.plan.outputs.publish == 'false')
+    needs: [plan, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Record the release source commit
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-version.mjs tag
+
   verify-public:
-    if: always() && github.ref == 'refs/heads/main' && (inputs.action == 'verify-public' || (inputs.action == 'publish' && needs.release.result == 'success'))
-    needs: release
+    if: always() && needs.plan.result == 'success' && (needs.plan.outputs.action == 'verify-public' || (needs.plan.outputs.action == 'publish' && (needs.release.result == 'success' || needs.plan.outputs.publish == 'false')))
+    needs: [plan, release]
     strategy:
       fail-fast: false
       matrix:
@@ -123,16 +153,20 @@ jobs:
           node-version: '24'
       - name: Install the public version outside the checkout
         shell: bash
+        env:
+          RELEASE_ACTION: ${{ needs.plan.outputs.action }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          version=$(node -p "require('./packages/cli/package.json').version")
           cd "$RUNNER_TEMP"
-          npm view "openkode@$version" name version dist.shasum dist.tarball dist-tags.latest --json --registry=https://registry.npmjs.org/
           for attempt in $(seq 1 15); do
-            npm install --global "openkode@$version" --registry=https://registry.npmjs.org/ && break
+            npm install --global "openkode@$RELEASE_VERSION" --registry=https://registry.npmjs.org/ && break
             if [ "$attempt" = 15 ]; then exit 1; fi
             sleep 30
           done
-          npm view "openkode@$version" name version dist.shasum dist-tags.latest --json --registry=https://registry.npmjs.org/
-          test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$version"
-          test "$(openkode --version)" = "$version"
+          npm view "openkode@$RELEASE_VERSION" name version gitHead dist.shasum dist-tags.latest --json --registry=https://registry.npmjs.org/
+          test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$RELEASE_VERSION"
+          if [ "$RELEASE_ACTION" = publish ]; then
+            test "$(npm view "openkode@$RELEASE_VERSION" gitHead --registry=https://registry.npmjs.org/)" = "$GITHUB_SHA"
+          fi
+          test "$(openkode --version)" = "$RELEASE_VERSION"
           openkode --help

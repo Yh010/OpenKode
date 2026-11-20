@@ -15,68 +15,79 @@ downloads became available several minutes later, and both installation checks
 passed. One earlier Windows credential test job hit its helper timeout; the
 failed job passed on rerun.
 
-## Running releases
+## Automatic releases from main
 
-Use the **npm release** workflow in GitHub Actions, on `main`. It builds one
-archive, runs the tests on Windows and macOS, and installs that same archive in
-separate temporary folders on both systems. No real model API key is needed.
-Nothing publishes on a push or pull request.
+Each push to `main`, including a merged pull request, starts the **npm release**
+workflow. This includes documentation and workflow changes. One release covers
+all commits included in that push. Other branches can only run validation.
 
-## Validate
+1. Read npm's published versions and choose the next patch version.
+2. Write that version and the full source commit (`gitHead`) into the build's
+   package manifest.
+3. Build one archive, run core/CLI/release tests, and install that archive in
+   separate temporary directories on Windows and macOS.
+4. Publish the exact tested archive through npm trusted publishing.
+5. Record a `v<version>` Git tag at the source commit.
+6. Install the public version outside the checkout on Windows and macOS. Check
+   the installed version, the public `latest` tag, source commit and help command.
 
-Run the workflow with `action: validate`. The `npm-package` artifact contains the
-distributable. The two `package-test-*` artifacts record the archive's hash and
-installation checks. All jobs must pass before staging or publishing.
+Failed build or test jobs prevent publishing. A failure after publishing (such
+as public download propagation or tag creation) still reports a failed workflow;
+the already published version remains on npm. Rerun that workflow to finish its
+checks. A source commit already recorded in npm's `gitHead` reuses its version
+and is not published again. A registry error stops planning rather than guessing
+an available version.
 
-## First release
+Releases run one at a time. GitHub queues up to 100 waiting runs in order of
+arrival at the concurrency group; additional runs are subject to GitHub's queue
+limit. npm is the authority for allocated release versions. Git tags and the
+package's `gitHead` identify the exact source. The checkout's
+`packages/cli/package.json` holds the starting version, and CI writes the chosen
+version only in its working copy before building and testing. It does not push
+version-only commits back to `main`. An intentional higher major/minor version
+in that source manifest becomes the next release version.
 
-The npm account owner must create a short-lived granular npm token with permission
-to create this package, using **Read and write (stage only)**. Store it directly in
-the repository's Actions secrets as `NPM_TOKEN`. Do not paste it into chat, code,
-workflow inputs or logs. Because the unscoped package does not yet exist, npm may
-require access to all packages for this first token. Revoke it after setup.
+## npm connection
 
-Run the workflow with `action: stage`. npm uploads the tested archive and reserves
-the package name. On npmjs.com, review the staged `openkode` version and approve
-it. npm requires the account owner to complete two-factor authentication for this
-approval. Staging alone does not make the CLI version available to install.
-After approving the first release, run the workflow with `action: verify-public`
-to test installation from the public registry on Windows and macOS.
-
-## Following releases
-
-After the package exists, configure its npm **Trusted Publisher**:
+The package's npm Trusted Publisher must use:
 
 - Provider: GitHub Actions
 - Organization or user: `Yh010`
 - Repository: `OpenKode`
 - Workflow filename: `npm-release.yml`
-- Environment: leave empty (this workflow does not use a GitHub environment)
-- Allow direct `npm publish`
+- Environment: empty (the workflow does not use a GitHub environment)
+- Allow `npm publish`: enabled
+- Allow `npm dist-tag`: disabled (separate tag administration is not used)
 
-Run a release within npm's initial validation window for this configuration.
-Use a new version in `packages/cli/package.json` for every release. Run the
-workflow with `action: publish`. This uses GitHub's short-lived identity and
-does not pass `NPM_TOKEN` to the publish step.
-After publishing, the workflow installs the public version from npm outside the
-checkout on Windows and macOS and checks its version and help command.
+The workflow uses GitHub's short-lived identity and does not read `NPM_TOKEN`.
+The first-release stage-only token can be revoked in npm and its GitHub secret
+removed after switching to this connection. Account verification may be needed
+when establishing the connection; regular releases do not require manual npm
+approval.
 
-Revoke the first-release token in npm and remove the `NPM_TOKEN` GitHub secret
-after it is no longer needed. Never reuse a published or pending staged version.
+## Manual recovery and validation
 
-## Check public installation
+Run **npm release** with:
 
-After approval or publishing, verify from an allowed network on Windows or macOS:
+- `validate`: build and test the package without publishing. This also works on
+  development branches.
+- `publish`: publish a new main commit or finish a previously published commit's
+  tagging and public checks. Publishing is restricted to `main`.
+- `verify-public`: check the version currently served by npm's `latest` tag.
+
+For a failed run, prefer GitHub's rerun controls on that same source commit.
+Do not unpublish or reuse a released version to fix a failure.
+
+## Users updating an installed CLI
 
 ```sh
-npm view openkode version --registry=https://registry.npmjs.org/
-npm install -g openkode --registry=https://registry.npmjs.org/
+npm install -g openkode@latest
 openkode --version
-openkode --help
 ```
 
-The operator's dashboard and collector are separate hosted services and are not
-part of this npm release.
+Existing installed copies do not update themselves. Node.js 24.14 or newer and
+Windows/macOS remain required. The collector and dashboard are separate hosted
+services and are not deployed by this workflow.
 
-References: [npm staged publishing](https://docs.npmjs.com/cli/v11/commands/npm-stage/),
-[npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+References: [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/),
+[GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).

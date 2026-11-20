@@ -43,6 +43,7 @@ try {
     const packageRoot = path.join(install, process.platform === "win32" ? "node_modules/openkode" : "lib/node_modules/openkode");
     const bin = path.join(packageRoot, "dist/index.js");
     const installed = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
+    if (process.env.GITHUB_ACTIONS === "true") assert.equal(installed.gitHead, process.env.GITHUB_SHA, "The archive must identify the tested source commit");
     assert.ok(!Object.keys(installed.dependencies ?? {}).length, "The release must not download core or runtime dependencies");
     assert.match(await run([bin, "--help"]), /configure/);
     assert.equal((await run([bin, "--version"])).trim(), manifest.version);
