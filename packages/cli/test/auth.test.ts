@@ -97,7 +97,7 @@ test("auth commands are mutually exclusive and failed operations release the loc
     } finally { await rm(home, { recursive: true, force: true }); }
 });
 
-test("Windows session persistence encrypts, rotates, and clears refresh tokens", { skip: process.platform !== "win32" }, async () => {
+test("session persistence encrypts, rotates, and clears refresh tokens", { skip: !["win32", "darwin"].includes(process.platform) }, async () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "openkode-session-"));
     const store = new SessionStore("https://example.com", home);
     try {

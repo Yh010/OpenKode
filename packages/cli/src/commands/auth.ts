@@ -9,8 +9,10 @@ import { loginCallback } from "../auth/callback.js";
 async function openBrowser(url: string): Promise<void> {
     // PowerShell receives only the public authorization URL on stdin, not a token.
     await new Promise<void>((resolve, reject) => {
-        const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
-            "Start-Process -FilePath ([Console]::In.ReadToEnd())"], { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
+        const child = process.platform === "darwin"
+            ? spawn("/usr/bin/open", [url], { stdio: ["pipe", "ignore", "ignore"] })
+            : spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                "Start-Process -FilePath ([Console]::In.ReadToEnd())"], { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
         const timeout = setTimeout(() => { child.kill(); reject(new Error("Could not open your browser.")); }, 5_000);
         child.once("error", () => { clearTimeout(timeout); reject(new Error("Could not open your browser.")); });
         child.once("close", code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error("Could not open your browser.")); });
@@ -42,10 +44,10 @@ function authAction(action: (api: SupabaseAuth, store: SessionStore) => Promise<
 }
 
 export function loadAuthCommands(program: Command): void {
-    const login = program.command("login").description("Sign in to OpenKode with Google (Windows)")
+    const login = program.command("login").description("Sign in to OpenKode with Google (Windows or macOS)")
         .option("--no-browser", "Print the sign-in URL without opening a browser");
     login.action(authAction(async (api, store) => {
-            if (process.platform !== "win32") throw new Error("Secure login currently supports Windows only.");
+            if (!["win32", "darwin"].includes(process.platform)) throw new Error("Secure login supports Windows and macOS.");
             const { verifier, challenge } = pkce();
             const abort = new AbortController();
             const cancel = () => abort.abort();

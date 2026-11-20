@@ -28,12 +28,12 @@ claim that every historical conversation or deployed account setting was reviewe
 | Hosted storage | Events go to Supabase Postgres JSONB. Hosted mode bypasses local JSONL/SQLite and the worker. | Launch implementation choice within requested Render/Supabase setup; storage path should have been explained explicitly. |
 | Hosted request/view limits | Request body at most 1 MB; dashboard reads at most 20,000 spans per filter, then asks for a shorter range. | Launch implementation limits, not separately agreed product requirements. |
 | Hosted AI analysis | Hosted `/analyze` returns 503 until an operator model is configured; trace browsing/export work. | Deferred during launch; previously reported. CLI provider support does not enable hosted analysis. |
-| Platform support | Persistent Google login and saved API keys use Windows DPAPI. Other platforms are unsupported by those flows. | Launch implementation choice, not an explicit Windows-only product requirement. |
+| Platform support | Windows DPAPI and macOS login Keychain protection are implemented. Linux remains unsupported by saved-credential flows. | Windows-only restriction corrected at the user's request. macOS native integration test still needs a Mac; platform-independent crypto/command tests run on Windows. |
 | Model selection | Defaults: Ollama `qwen2.5-coder:3b`, OpenAI `gpt-5.4-mini`, Claude `claude-sonnet-4-6`, Gemini `gemini-4-hydrogen`. Model IDs are editable; no silent provider fallback. | Cloud model defaults selected during launch work without a separate preference question. |
-| Saved keys | One provider configuration/key is saved at a time; changing providers replaces it. Environment settings override saved settings. | Launch implementation choice, not an agreed multi-provider key-management design. |
+| Saved keys | Each provider retains its model and encrypted key. Switching providers or choosing Ollama preserves the others. Environment settings override the selected provider's saved settings. | Single-provider overwrite behavior corrected at the user's request; old records migrate on save. |
 | Model errors | Three retries for selected transient HTTP errors; invalid credentials and ambiguous network failures are not retried; accepted streams are not replayed. | Retry feature explicitly requested; detailed retry policy selected in implementation. |
 | Retention/deletion | No automatic trace expiry or user-facing account/trace deletion flow was found in the audited source. | Unfinished product behavior, not an agreed retention policy. |
 | Package license | Package metadata currently says ISC, without a complete release license setup. | Existing metadata, not a confirmed license choice. Publishing still needs that decision. |
 
-The 4,000-character cap, upload loss behavior, hosted limits and Windows dependency
+The 4,000-character cap, upload loss behavior, hosted limits and missing Linux credential support
 remain visible limitations. This change does not silently replace those policies.

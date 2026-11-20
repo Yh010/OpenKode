@@ -3,11 +3,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { MacKeychainProtection } from "./MacKeychainProtection.js";
+const macCredentials = new MacKeychainProtection();
 
-// Only a refresh token is stored, encrypted for the current Windows account.
+// Refresh tokens and model keys are encrypted for the current OS account.
 // Secrets travel over stdin/stdout, never PowerShell arguments or logs.
 export async function protectToken(value: string, decrypt = false): Promise<string> {
-    if (process.platform !== "win32") throw new Error("Secure session storage currently supports Windows only.");
+    if (process.platform === "darwin") return macCredentials.protect(value, decrypt);
+    if (process.platform !== "win32") throw new Error("Secure credential storage supports Windows and macOS.");
     const script = "$ErrorActionPreference='Stop'; [void][Reflection.Assembly]::LoadWithPartialName('System.Security'); $v=[Console]::In.ReadToEnd(); " + (decrypt
         ? "$b=[Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($v),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Out.Write([Text.Encoding]::UTF8.GetString($b))"
         : "$b=[Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($v),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Out.Write([Convert]::ToBase64String($b))");

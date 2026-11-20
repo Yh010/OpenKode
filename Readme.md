@@ -91,7 +91,7 @@ OpenKode can automatically run a small set of verification scripts after a chang
 
 ### Prerequisites
 
-- Windows, Node.js 24.14 or newer, and pnpm (secure Google login and saved keys currently use Windows credential protection).
+- Windows or macOS, Node.js 24.14 or newer, and pnpm. Saved credentials use Windows DPAPI or a macOS login Keychain encryption key.
 - An OpenAI or Anthropic API key for cloud models, or [Ollama](https://ollama.com/) running locally. For the default local model:
 
   ```powershell
@@ -177,7 +177,7 @@ Set-Location packages/cli
 pnpm link --global
 ```
 
-### 3. Sign in with Google (Windows)
+### 3. Sign in with Google (Windows or macOS)
 
 ```powershell
 openkode login
@@ -192,15 +192,16 @@ and OpenCollector. Google account creation/sign-in is currently configured in
 testing mode; public availability has not been verified.
 
 Only the Supabase refresh token is retained locally. It is encrypted using
-Windows DPAPI for your Windows account and saved under `~/.openkode/auth`
+Windows DPAPI or AES-GCM with an encryption key held in your macOS login Keychain, and saved under `~/.openkode/auth`
 (or `OPENKODE_HOME`). Access tokens and Google provider tokens are not saved.
 `whoami` refreshes the saved session and verifies your identity with Supabase.
 `logout` revokes this authentication session and removes local credentials;
 `logout --local` only removes local credentials, useful when the server cannot
 be reached. Already issued access tokens may remain valid until expiry.
 
-Secure session persistence currently supports Windows only. macOS and Linux
-credential-store integration remains pending. Authentication commands respect
+Secure session persistence supports Windows and macOS. macOS may ask you to
+allow access to the OpenKode item in your login Keychain. Linux credential-store
+integration remains pending. Authentication commands respect
 the configured HTTP(S) proxy and system certificate store. If a command crashes,
 its error may identify a stale `.lock` file: remove it only after confirming no
 authentication command is running.
@@ -278,8 +279,11 @@ openkode "your task"
 
 `configure` asks for a provider, model ID, and (for a cloud provider) an API key
 in a masked prompt. It saves settings to `~/.openkode/model.json`; the key is
-encrypted for the current Windows account. Switching to Ollama removes the
-saved cloud key. Your key is sent only to the selected provider's official API,
+encrypted using Windows DPAPI or a key held in the macOS login Keychain.
+Each provider keeps its own model and encrypted key. Switching providers or
+choosing Ollama preserves the other saved keys. Run `openkode configure` again
+to switch; Enter keeps a previously saved key for that provider. Old settings
+migrate automatically on the next save. Your key is sent only to the selected provider's official API,
 in authentication headers. It is not sent to Supabase or OpenCollector.
 
 OpenAI uses the Responses API with response storage disabled. Claude uses the
