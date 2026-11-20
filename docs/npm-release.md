@@ -1,5 +1,22 @@
 # npm releases
 
+## Published release
+
+`openkode@1.0.0` was published on November 20, 2026. The public `latest` tag is
+`1.0.0`. Its SHA1 is `f42c03c8b1549144d5d7770646d56fe9176be710`, matching the
+archive tested before upload.
+
+- [Package on npm](https://www.npmjs.com/package/openkode)
+- [Build, Windows/Mac tests and staging](https://github.com/Yh010/OpenKode/actions/runs/44741326900)
+- [Public Windows/Mac installation checks](https://github.com/Yh010/OpenKode/actions/runs/44743173582)
+
+The first public download checks returned 404 after npm reported publication;
+downloads became available several minutes later, and both installation checks
+passed. One earlier Windows credential test job hit its helper timeout; the
+failed job passed on rerun.
+
+## Running releases
+
 Use the **npm release** workflow in GitHub Actions, on `main`. It builds one
 archive, runs the tests on Windows and macOS, and installs that same archive in
 separate temporary folders on both systems. No real model API key is needed.

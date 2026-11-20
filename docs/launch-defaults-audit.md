@@ -33,7 +33,7 @@ claim that every historical conversation or deployed account setting was reviewe
 | Saved keys | Each provider retains its model and encrypted key. Switching providers or choosing Ollama preserves the others. Environment settings override the selected provider's saved settings. | Single-provider overwrite behavior corrected at the user's request; old records migrate on save. |
 | Model errors | Three retries for selected transient HTTP errors; invalid credentials and ambiguous network failures are not retried; accepted streams are not replayed. | Retry feature explicitly requested; detailed retry policy selected in implementation. |
 | Retention/deletion | No automatic trace expiry or user-facing account/trace deletion flow was found in the audited source. | Unfinished product behavior, not an agreed retention policy. |
-| Package license and release | Existing ISC metadata is now backed by the root LICENSE. The single bundled npm package includes its license and notices for bundled dependencies. | Prepared and fresh-install tested at the user's request; actual npm publication requires registry access and CLI authentication. |
+| Package license and release | Existing ISC metadata is now backed by the root LICENSE. The single bundled npm package includes its license and notices for bundled dependencies. | Published openkode@1.0.0 through GitHub Actions and npm browser approval on November 20, 2026. Public registry installs, latest tag, version and help passed on Windows and macOS; published SHA1 matches the tested archive. |
 
 The 4,000-character cap, upload loss behavior, hosted limits and missing Linux credential support
 remain visible limitations. This change does not silently replace those policies.
