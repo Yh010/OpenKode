@@ -135,10 +135,15 @@ agent retry links and reasons, and tool execution or validation rejection. The d
 uses these records to explain why each call ran and what happened afterward. Older
 traces keep their original evidence; missing routing decisions cannot be backfilled.
 
-To include readable tasks, correction messages and tool payloads, enable
-`OPENKODE_TELEMETRY_CAPTURE_LLM_CONTENT=true`. These fields use the same redaction and
-length limits as existing model-content capture. With capture disabled, structural
-decisions, ownership links, context counts and execution outcomes are still recorded.
+Readable prompts, model responses, tasks, correction messages, tool inputs/results
+and final answers are captured by default for evaluation. Set
+`OPENKODE_TELEMETRY_CAPTURE_LLM_CONTENT=false` explicitly to disable content capture.
+Credential redaction remains active. The existing default cap is 4,000 characters
+per captured value and 4,000 characters across each generation's input messages;
+truncated fields are marked. `OPENKODE_TELEMETRY_LLM_MAX_CONTENT_CHARS` changes this
+cap. These are bounded evaluation records, not guaranteed full transcripts.
+With capture disabled, structural decisions, ownership links, context counts and
+execution outcomes are still recorded.
 Rebuild the core and restart the CLI after changing runtime code.
 
 For an explicit request to explain named files, the runtime reads those files from the

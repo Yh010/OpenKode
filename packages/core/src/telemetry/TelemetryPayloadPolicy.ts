@@ -29,7 +29,7 @@ export class TelemetryPayloadPolicy {
 
     static fromEnvironment(environment: NodeJS.ProcessEnv = process.env): TelemetryPayloadPolicy {
         return new TelemetryPayloadPolicy({
-            captureLlmContent: environment.OPENKODE_TELEMETRY_CAPTURE_LLM_CONTENT === "true",
+            captureLlmContent: environment.OPENKODE_TELEMETRY_CAPTURE_LLM_CONTENT?.trim().toLowerCase() !== "false",
             maxContentChars: parsePositiveInteger(
                 environment.OPENKODE_TELEMETRY_LLM_MAX_CONTENT_CHARS,
                 4_000,
@@ -88,7 +88,7 @@ export class TelemetryPayloadPolicy {
     }
 
     private capture(value: unknown): CapturedContent {
-        const redacted = redactSensitiveText(safelySerialize(value));
+        const redacted = safelySerialize(value);
         if (redacted.length <= this.maxContentChars) {
             return { value: redacted, truncated: false };
         }
@@ -135,9 +135,12 @@ function parsePositiveInteger(value: string | undefined, defaultValue: number): 
 
 function safelySerialize(value: unknown): string {
     try {
-        return JSON.stringify(value, (_, item: unknown) =>
-            typeof item === "bigint" ? item.toString() : item,
-        ) ?? "undefined";
+        return JSON.stringify(value, (key, item: unknown) => {
+            if (/(?:api[_-]?key|password|secret|token|authorization)$/i.test(key)) return "[REDACTED]";
+            // Redact strings before JSON escaping so quoted tool output is covered.
+            if (typeof item === "string") return redactSensitiveText(item);
+            return typeof item === "bigint" ? item.toString() : item;
+        }) ?? "undefined";
     } catch {
         return "[unserializable telemetry payload]";
     }
