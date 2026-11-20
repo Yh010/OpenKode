@@ -67,7 +67,7 @@ OpenKode is an active prototype with a small, controlled toolset. It supports lo
 ### What works today
 
 - A CLI that accepts a natural-language request.
-- Orchestrator, planner, and coder workers using Ollama, OpenAI, or Claude.
+- Orchestrator, planner, and coder workers using Ollama, OpenAI, Claude, or Gemini.
 - Direct file-content requests through `ReadFileTool`.
 - Direct file-creation/replacement requests through `WriteFileTool`.
 - Planner-led repository discovery with Glob and Read.
@@ -256,7 +256,7 @@ in Supabase, so a Render restart does not erase them. Free Render instances
 sleep when idle; the first upload may take about a minute. Uploads retry once
 after a temporary failure and remain best-effort during longer outages.
 
-The CLI supports Ollama, OpenAI and Claude. npm distribution remains follow-up
+The CLI supports Ollama, OpenAI, Claude and Gemini. npm distribution remains follow-up
 work. Hosted dashboard AI analysis separately needs a hosted model; trace
 viewing, charts and Excel exports work now.
 
@@ -270,25 +270,31 @@ openkode login
 openkode "your task"
 ```
 
-`configure` asks for a provider, model ID, and (for OpenAI or Claude) an API key
+`configure` asks for a provider, model ID, and (for a cloud provider) an API key
 in a masked prompt. It saves settings to `~/.openkode/model.json`; the key is
 encrypted for the current Windows account. Switching to Ollama removes the
 saved cloud key. Your key is sent only to the selected provider's official API,
 in authentication headers. It is not sent to Supabase or OpenCollector.
 
 OpenAI uses the Responses API with response storage disabled. Claude uses the
-Messages API. Agent decisions use structured JSON outputs; usage traces record
+Messages API. Gemini uses Google's GenerateContent API with a Google AI Studio
+API key. Agent decisions use structured JSON outputs; usage traces record
 the actual provider/model and token counts. The CLI reports summed token usage
 for cloud calls in each run. No provider fallback happens silently.
 
-The initial model choices are `gpt-5.4-mini` and `claude-sonnet-4-6`; enter another
+The initial model choices are `gpt-5.4-mini`, `claude-sonnet-4-6` and
+`gemini-4-hydrogen`; enter another
 supported model ID during configuration to change them. Models must support
 structured JSON outputs. Your provider controls availability, quotas, retention
-and billing. A ChatGPT or Claude chat subscription is not an API key.
+and billing. A ChatGPT, Claude or Gemini chat subscription is not an API key.
+Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/api-keys).
+Gemini usage includes thinking tokens in output totals; cached prompt tokens
+are already included in input totals.
 
-For an environment-based setup, use `OPENKODE_PROVIDER` (`ollama`, `openai`, or
-`anthropic`), optional `OPENKODE_MODEL`, and `OPENAI_API_KEY` or
-`ANTHROPIC_API_KEY`. Environment values override saved settings; they are never
+For an environment-based setup, use `OPENKODE_PROVIDER` (`ollama`, `openai`,
+`anthropic`, or `gemini`), optional `OPENKODE_MODEL`, and the matching
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`.
+Environment values override saved settings; they are never
 copied into the settings file. Avoid putting a real key in shell arguments or
 committing it to a project. Without configuration, existing local Ollama setups
 continue to use `qwen2.5-coder:3b`.
@@ -300,7 +306,9 @@ three minutes.
 Provider references: [OpenAI Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses),
 [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 [Claude Messages](https://platform.claude.com/docs/en/api/messages/create),
-[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs).
+[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
+[Gemini GenerateContent](https://ai.google.dev/api/generate-content),
+[Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output).
 
 ## Project structure
 

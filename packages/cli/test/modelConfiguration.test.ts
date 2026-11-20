@@ -20,6 +20,10 @@ test("cloud API keys are encrypted on disk, rotate correctly, and disappear when
         await store.save(next);
         assert.deepEqual(await store.read(), next);
         assert.equal((await readFile(store.file, "utf8")).includes(next.apiKey), false);
+        const gemini = { provider: "gemini" as const, model: "gemini-4-hydrogen", apiKey: "gemini-private-test-key" };
+        await store.save(gemini);
+        assert.deepEqual(await store.read(), gemini);
+        assert.equal((await readFile(store.file, "utf8")).includes(gemini.apiKey), false);
         await store.save({ provider: "ollama", model: "local-model:latest" });
         assert.deepEqual(await store.read(), { provider: "ollama", model: "local-model:latest" });
         assert.equal(JSON.parse(await readFile(store.file, "utf8")).encryptedApiKey, undefined);
@@ -40,13 +44,15 @@ test("encryption failure leaves the previous config intact and never includes se
 });
 
 test("complete environment settings override even a broken saved config without unlocking it", async () => {
-    const keys = ["OPENKODE_HOME", "OPENKODE_PROVIDER", "OPENKODE_MODEL", "OPENAI_API_KEY"] as const;
+    const keys = ["OPENKODE_HOME", "OPENKODE_PROVIDER", "OPENKODE_MODEL", "OPENAI_API_KEY", "GEMINI_API_KEY"] as const;
     const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     const home = await mkdtemp(path.join(os.tmpdir(), "openkode-model-env-"));
     try {
         await writeFile(path.join(home, "model.json"), "broken json");
         Object.assign(process.env, { OPENKODE_HOME: home, OPENKODE_PROVIDER: "openai", OPENKODE_MODEL: "env-model", OPENAI_API_KEY: "env-secret" });
         assert.deepEqual(await loadModelConfiguration(), { provider: "openai", model: "env-model", apiKey: "env-secret" });
+        Object.assign(process.env, { OPENKODE_PROVIDER: "gemini", GEMINI_API_KEY: "gemini-env-secret" });
+        assert.deepEqual(await loadModelConfiguration(), { provider: "gemini", model: "env-model", apiKey: "gemini-env-secret" });
         assert.equal(await readFile(path.join(home, "model.json"), "utf8"), "broken json");
     } finally {
         for (const key of keys) { if (original[key] === undefined) delete process.env[key]; else process.env[key] = original[key]; }

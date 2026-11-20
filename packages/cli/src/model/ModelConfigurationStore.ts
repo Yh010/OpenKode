@@ -16,7 +16,7 @@ export class ModelConfigurationStore {
         catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
         try {
             const saved = JSON.parse(raw);
-            if (saved.version !== 1 || !["ollama", "openai", "anthropic"].includes(saved.provider) || typeof saved.model !== "string"
+            if (saved.version !== 1 || !["ollama", "openai", "anthropic", "gemini"].includes(saved.provider) || typeof saved.model !== "string"
                 || (saved.provider !== "ollama" && typeof saved.encryptedApiKey !== "string")) throw new Error();
             const apiKey = saved.provider === "ollama" ? undefined : await this.protect(saved.encryptedApiKey, true);
             return resolveModelConfiguration({}, { provider: saved.provider, model: saved.model, ...(apiKey ? { apiKey } : {}) });

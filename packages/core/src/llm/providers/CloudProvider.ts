@@ -9,14 +9,14 @@ import { createCoderMessages, createPlannerMessages } from "../prompts/workerMes
 import { decisionSchema, parseDecision, type DecisionRole } from "./responseSchemas.js";
 import { recordModelUsage } from "../usage.js";
 
-export type CloudProviderOptions = { provider: "openai" | "anthropic"; model: string; apiKey: string };
+export type CloudProviderOptions = { provider: "openai" | "anthropic" | "gemini"; model: string; apiKey: string };
 type Result = { text: string; usage: LLMUsage };
 type Json = Record<string, any>;
 
 export class CloudProvider implements LLMProvider {
     readonly info: { provider: string; model: string };
     constructor(private readonly options: CloudProviderOptions, private readonly request: typeof fetch = fetch) {
-        if (!["openai", "anthropic"].includes(options.provider) || !options.model.trim() || !options.apiKey.trim() || /\s/.test(options.apiKey)) throw new Error("A provider, model and valid API key are required. Run openkode configure.");
+        if (!["openai", "anthropic", "gemini"].includes(options.provider) || !options.model.trim() || !options.apiKey.trim() || /\s/.test(options.apiKey)) throw new Error("A provider, model and valid API key are required. Run openkode configure.");
         this.info = { provider: options.provider, model: options.model };
     }
     async generate(request: LLMRequest) { const result = await this.complete(request.messages); return { response: result.text, usage: result.usage }; }
@@ -33,8 +33,14 @@ export class CloudProvider implements LLMProvider {
     }
     private async start(messages: Message[], stream: boolean, role?: DecisionRole): Promise<Response> {
         const openai = this.options.provider === "openai";
+        const gemini = this.options.provider === "gemini";
         const schema = role ? decisionSchema(role) : undefined;
-        const body = openai ? {
+        const systemParts = messages.filter(message => message.role === "system").map(message => ({ text: message.content }));
+        const body = gemini ? {
+            ...(systemParts.length ? { systemInstruction: { parts: systemParts } } : {}),
+            contents: messages.filter(message => message.role !== "system").map(message => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: message.content }] })),
+            generationConfig: { maxOutputTokens: 8192, ...(schema ? { responseMimeType: "application/json", responseJsonSchema: schema } : {}) },
+        } : openai ? {
             model: this.options.model, input: messages, store: false, stream,
             max_output_tokens: 8192,
             ...(schema ? { text: { format: { type: "json_schema", name: `${role}_decision`, strict: true, schema } } } : {}),
@@ -46,9 +52,12 @@ export class CloudProvider implements LLMProvider {
         };
         let response: Response;
         try {
-            response = await this.request(openai ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages", {
-                method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.options.apiKey}`,
-                    ...(openai ? {} : { "anthropic-version": "2026-10-21" }) },
+            const url = gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.options.model.replace(/^models\//, ""))}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`
+                : openai ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages";
+            response = await this.request(url, {
+                method: "POST", headers: { "Content-Type": "application/json",
+                    ...(gemini ? { "x-goog-api-key": this.options.apiKey } : { Authorization: `Bearer ${this.options.apiKey}` }),
+                    ...(this.options.provider === "anthropic" ? { "anthropic-version": "2026-10-21" } : {}) },
                 body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000),
             });
         } catch { throw new Error(`${this.info.provider} could not be reached. Check your connection and retry.`); }
@@ -67,6 +76,15 @@ export class CloudProvider implements LLMProvider {
         try { data = await response.json() as Json; } catch { throw new Error("The provider returned an invalid response."); }
         const openai = this.options.provider === "openai";
         if (!data || typeof data !== "object") throw new Error("The provider returned an invalid response.");
+        if (this.options.provider === "gemini") {
+            const candidate = geminiCandidate(data);
+            if (candidate?.finishReason !== "STOP") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
+            const text = geminiText(candidate);
+            if (!text) throw new Error("The provider returned no text.");
+            const usage = geminiUsage(data.usageMetadata, performance.now() - started);
+            recordModelUsage(usage);
+            return { text, usage };
+        }
         if (openai ? data.status !== "completed" : data.stop_reason !== "end_turn") throw new Error("The model did not finish its answer. Retry or choose a model with a larger output allowance.");
         if (!Array.isArray(openai ? data.output : data.content)) throw new Error("The provider returned an invalid response.");
         const blocks = openai ? data.output.filter((item: Json) => item?.type === "message").flatMap((item: Json) => Array.isArray(item.content) ? item.content : []) : data.content;
@@ -81,8 +99,20 @@ export class CloudProvider implements LLMProvider {
         const started = performance.now();
         const response = await this.start(request.messages, true);
         let usage: LLMUsage | undefined;
+        let geminiMetadata: Json | undefined;
         let finished = false;
         for await (const event of sse(response)) {
+            if (this.options.provider === "gemini") {
+                if (finished && event.candidates?.length) throw new Error("The provider sent content after stream completion.");
+                const candidate = geminiCandidate(event);
+                if (candidate?.finishReason && candidate.finishReason !== "STOP") throw new Error("The model did not finish its answer.");
+                const text = geminiText(candidate);
+                if (text) onChunk(text);
+                // Early chunks may report only prompt usage; final metadata is cumulative.
+                if (event.usageMetadata) geminiMetadata = event.usageMetadata;
+                if (candidate?.finishReason === "STOP") finished = true;
+                continue;
+            }
             if (["error", "response.failed", "response.incomplete"].includes(event.type)) throw new Error("The provider could not finish the stream. Retry the request.");
             if (event.type === "response.output_text.delta" && typeof event.delta === "string") onChunk(event.delta);
             if (event.type === "response.refusal.delta") throw new Error("The model declined this request.");
@@ -95,11 +125,34 @@ export class CloudProvider implements LLMProvider {
             }
             if (event.type === "message_stop") finished = true;
         }
+        if (this.options.provider === "gemini" && finished && geminiMetadata) usage = geminiUsage(geminiMetadata, 0);
         if (!finished || !usage) throw new Error("The provider stream ended before completion.");
         usage.totalDurationNs = Math.round((performance.now() - started) * 1_000_000);
         recordModelUsage(usage);
         return { usage };
     }
+}
+
+function geminiCandidate(data: Json): Json | undefined {
+    if (!data || typeof data !== "object" || data.error) throw new Error("The provider returned an invalid response.");
+    if (data.promptFeedback?.blockReason) throw new Error("The model declined this request.");
+    if (data.candidates !== undefined && (!Array.isArray(data.candidates) || data.candidates.length > 1)) throw new Error("The provider returned an invalid response.");
+    const candidate = data.candidates?.[0];
+    if (candidate !== undefined && (!candidate || typeof candidate !== "object")) throw new Error("The provider returned an invalid response.");
+    return candidate;
+}
+
+function geminiText(candidate: Json | undefined): string {
+    const parts = candidate?.content?.parts;
+    if (parts === undefined) return "";
+    if (!Array.isArray(parts)) throw new Error("The provider returned an invalid response.");
+    return parts.filter((part: Json) => part && !part.thought && typeof part.text === "string").map((part: Json) => part.text).join("");
+}
+
+function geminiUsage(value: Json | undefined, durationMs: number): LLMUsage {
+    if (!value || ![value.promptTokenCount, value.candidatesTokenCount, value.thoughtsTokenCount ?? 0].every(token => Number.isFinite(token) && token >= 0)) throw new Error("The provider did not return valid token usage.");
+    // Prompt totals already include cached tokens; thinking tokens are output.
+    return { inputTokens: value.promptTokenCount, outputTokens: value.candidatesTokenCount + (value.thoughtsTokenCount ?? 0), totalDurationNs: Math.round(durationMs * 1_000_000), promptEvalDurationNs: 0, evalDurationNs: 0 };
 }
 
 function usageFrom(value: Json | undefined, durationMs: number): LLMUsage {
