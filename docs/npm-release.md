@@ -39,6 +39,8 @@ Run a release within npm's initial validation window for this configuration.
 Use a new version in `packages/cli/package.json` for every release. Run the
 workflow with `action: publish`. This uses GitHub's short-lived identity and
 does not pass `NPM_TOKEN` to the publish step.
+After publishing, the workflow installs the public version from npm outside the
+checkout on Windows and macOS and checks its version and help command.
 
 Revoke the first-release token in npm and remove the `NPM_TOKEN` GitHub secret
 after it is no longer needed. Never reuse a published or pending staged version.

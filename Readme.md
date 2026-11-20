@@ -387,11 +387,17 @@ outside this repository. It checks the npm command shim, help, version, model
 configuration terminal guard and repository scan without `.env`. A synthetic
 network fixture also checks PKCE login, encrypted session persistence, streamed
 Gemini output and owned uploads to the default collector. It makes no paid model
-calls and does not use an existing account. Native macOS Keychain verification
-still requires a Mac. The release check writes `smoke-report.json` with the tested
+calls and does not use an existing account. GitHub Actions also runs the native
+macOS Keychain test and package installation on Windows and macOS. The release check writes `smoke-report.json` with the tested
 tarball's SHA-256 and covered steps.
 
-Publish the exact tested tarball using an npm account authorized for `openkode`:
+For GitHub-hosted builds and publishing, use the manual **npm release** workflow.
+The first release uses a stage-only npm token saved in the repository's private
+Actions secrets, then the account owner approves the version on npmjs.com. Later
+releases can use npm trusted publishing without a saved token. See
+[the release instructions](docs/npm-release.md).
+
+Alternatively, publish the exact tested tarball from an allowed network using an npm account authorized for `openkode`:
 
 ```sh
 npm login --registry=https://registry.npmjs.org/

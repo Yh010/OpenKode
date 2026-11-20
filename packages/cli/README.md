@@ -36,8 +36,8 @@ its normal API quota/billing. For local models, install Ollama separately.
 OpenKode keeps each provider's settings and encrypted key on your computer in
 `~/.openkode/model.json`. Windows uses account-based credential protection.
 macOS uses an encryption key in your login Keychain. Switching providers keeps
-the other saved keys. macOS support has automated simulated tests; native Mac
-verification is still pending.
+the other saved keys. Package installation and native credential storage are
+tested on Windows and macOS in GitHub Actions.
 
 ## Telemetry
 

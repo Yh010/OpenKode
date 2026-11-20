@@ -105,3 +105,30 @@ jobs:
       - name: Publish through npm trusted publishing
         if: inputs.action == 'publish'
         run: npm publish release/openkode-*.tgz --access public --provenance --registry=https://registry.npmjs.org/
+
+  verify-public:
+    if: inputs.action == 'publish'
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install the public version outside the checkout
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/cli/package.json').version")
+          cd "$RUNNER_TEMP"
+          for attempt in 1 2 3; do
+            npm install --global "openkode@$version" --registry=https://registry.npmjs.org/ && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep 20
+          done
+          test "$(openkode --version)" = "$version"
+          openkode --help
