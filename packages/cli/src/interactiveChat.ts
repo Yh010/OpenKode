@@ -3,6 +3,7 @@ import { ChatStore, createOpenKodeAgent, type Chat } from "@openkode/core";
 import { AuthenticatedSession, configureAuthNetwork } from "./auth/AuthenticatedSession.js";
 import { loadModelConfiguration } from "./model/ModelConfigurationStore.js";
 import { createProgressDisplay } from "./progress.js";
+import { readChatPrompt } from "./chatPrompt.js";
 
 const HELP = [
     "/new [title]    Start a new chat",
@@ -42,8 +43,8 @@ async function runSignedInChat(identity: AuthenticatedSession): Promise<void> {
 
     try {
         while (true) {
-            const input = await p.text({ message: `${chat?.title ?? draftTitle} ›`, placeholder: "Ask OpenKode to work on this project" });
-            if (p.isCancel(input)) break;
+            const input = await readChatPrompt();
+            if (input === undefined) break;
             const prompt = input.trim();
             if (!prompt) continue;
 
