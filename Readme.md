@@ -4,6 +4,22 @@ OpenKode is an early-stage, local-first coding agent. Its goal is to become an o
 
 The project is being built from first principles. The current focus is not breadth of features; it is building a reliable foundation for tool use, permissions, orchestration, and observability.
 
+## Install from npm
+
+Requires Node.js 24.14+ on Windows or macOS:
+
+```sh
+npm install -g openkode
+openkode login
+openkode configure
+openkode
+```
+
+The npm package includes the CLI, agent runtime and runtime dependencies. No
+repository checkout, pnpm install or `.env` is needed for normal use. Hosted
+OpenCollector and Supabase settings are included. See
+[the CLI README](packages/cli/README.md) for key storage and telemetry details.
+
 ## Vision
 
 An LLM alone can suggest code, but it cannot safely work on a real project without a way to inspect files, make controlled edits, and validate what happened.
@@ -47,7 +63,7 @@ OpenKode runtime ─────────────→ OpenCollector
   └─ File tools
 ```
 
-OpenKode sends batched telemetry events to the URL configured in `OPENKODE_TELEMETRY_COLLECTOR_URL`. OpenCollector therefore needs to be running and exposing its ingestion endpoint before OpenKode can start.
+OpenKode sends batched telemetry events to the hosted collector by default. Set `OPENKODE_TELEMETRY_COLLECTOR_URL` explicitly to use a self-hosted collector.
 
 ## Current state
 
@@ -105,7 +121,7 @@ OpenKode can automatically run a small set of verification scripts after a chang
 
 The example configuration uses the hosted OpenCollector endpoint. For a self-hosted collector, replace that URL with your HTTPS ingestion endpoint. You do not need to deploy a collector to try this checkout.
 
-The OpenKode runtime currently requires this endpoint; it will fail fast if `OPENKODE_TELEMETRY_COLLECTOR_URL` is not configured.
+The hosted endpoint is built in. Set `OPENKODE_TELEMETRY_COLLECTOR_URL` only when using a different collector.
 
 ### 2. Set up OpenKode
 
@@ -117,13 +133,13 @@ Set-Location OpenKode
 pnpm install
 ```
 
-Create a local environment file from the example:
+Optional: copy the environment settings as a reference. The CLI does not automatically load `.env`; set overrides in your shell.
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item .env.example .env # optional reference for environment overrides
 ```
 
-The collector URL in `.env` is:
+The built-in collector URL (also shown in `.env.example`) is:
 
 ```env
 OPENKODE_TELEMETRY_COLLECTOR_URL=https://openkode-collector.onrender.com/v1/telemetry/events
@@ -169,7 +185,7 @@ Build the core package and CLI:
 
 ```powershell
 pnpm --filter @openkode/core build
-pnpm --filter @openkode/cli build
+pnpm --filter openkode build
 ```
 
 Link the CLI globally:
@@ -191,7 +207,7 @@ openkode logout
 It uses PKCE and a loopback-only callback on port 43821. Close any other OpenKode
 login before starting another. Authentication works independently of Ollama
 and OpenCollector. Google account creation/sign-in is currently configured in
-testing mode; public availability has not been verified.
+testing mode. Basic-identity sign-up was verified with a separate non-operator account; Google consent-screen branding remains unfinished.
 
 Only the Supabase refresh token is retained locally. It is encrypted using
 Windows DPAPI or AES-GCM with an encryption key held in your macOS login Keychain, and saved under `~/.openkode/auth`
@@ -252,10 +268,10 @@ openkode --help
 
 ## Hosted telemetry
 
-OpenCollector now runs at `https://openkode-collector.onrender.com`. Set
-`OPENKODE_TELEMETRY_COLLECTOR_URL` to
-`https://openkode-collector.onrender.com/v1/telemetry/events`, as shown in
-`.env.example`. Sign in with `openkode login` before starting a coding session.
+OpenCollector runs at `https://openkode-collector.onrender.com`. The CLI uses its
+`/v1/telemetry/events` endpoint by default. Sign in with `openkode login` before
+starting a coding session. Override `OPENKODE_TELEMETRY_COLLECTOR_URL` only for
+a different collector.
 The CLI attaches verified account, installation and launch IDs to its traces.
 
 The internal operator dashboard is at
@@ -265,13 +281,13 @@ in Supabase, so a Render restart does not erase them. Free Render instances
 sleep when idle; the first upload may take about a minute. Uploads retry once
 after a temporary failure and remain best-effort during longer outages.
 
-The CLI supports Ollama, OpenAI, Claude and Gemini. npm distribution remains follow-up
-work. Hosted dashboard AI analysis separately needs a hosted model; trace
+The CLI supports Ollama, OpenAI, Claude and Gemini. The npm release bundles the CLI
+and core into one package. Hosted dashboard AI analysis separately needs a hosted model; trace
 viewing, charts and Excel exports work now.
 
 ## Choose your model
 
-After building/linking the CLI, run:
+After installing from npm or building/linking the CLI, run:
 
 ```powershell
 openkode configure
@@ -350,3 +366,38 @@ packages/
 ## Development status
 
 OpenKode is being developed in public as an educational, from-first-principles project. The implementation will evolve quickly, and the current interfaces should be treated as experimental.
+
+## Build and verify the npm release
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+pnpm pack:cli
+pnpm test:package
+```
+
+`pack:cli` writes `.cache/npm-release/openkode-<version>.tgz`. The archive contains
+only the bundled executable, package metadata, README, ISC license and dependency
+license notices. The core is private in the workspace and is included in the CLI
+bundle; it is not a second public package.
+
+`test:package` installs the actual tarball into a fresh temporary global prefix
+outside this repository. It checks the npm command shim, help, version, model
+configuration terminal guard and repository scan without `.env`. A synthetic
+network fixture also checks PKCE login, encrypted session persistence, streamed
+Gemini output and owned uploads to the default collector. It makes no paid model
+calls and does not use an existing account. Native macOS Keychain verification
+still requires a Mac. The release check writes `smoke-report.json` with the tested
+tarball's SHA-256 and covered steps.
+
+Publish the exact tested tarball using an npm account authorized for `openkode`:
+
+```sh
+npm login --registry=https://registry.npmjs.org/
+npm publish .cache/npm-release/openkode-1.0.0.tgz --access public --registry=https://registry.npmjs.org/
+```
+
+Use the tarball matching the package version and the smoke report. Publishing
+requires registry access and whatever authentication npm asks the account to
+complete. Website sign-in and CLI sign-in are separate.

@@ -1,18 +1,15 @@
 #!/usr/bin/env node
-import dotenv from "dotenv";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { Command } from 'commander';
 import { loadCommands } from './commands/index.js';
 //import { loadCommands } from './commands/llmcall.js';
 
-const cliDirectory = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(cliDirectory, "../../../.env"), quiet: true });
+const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
 
 const program = new Command();
 program
     .name('openkode')
-    .description('Powerful CLI Coding agent')
-    .version('1.0.0');
+    .description('Open source coding agent for your terminal')
+    .version(version);
 loadCommands(program);
 await program.parseAsync();

@@ -1,7 +1,7 @@
 {
-  "name": "@openkode/cli",
+  "name": "openkode",
   "version": "1.0.0",
-  "description": "",
+  "description": "Open source terminal coding agent with Ollama, OpenAI, Claude and Gemini support",
   "main": "./dist/index.js",
   "type": "module",
   "engines": {
@@ -13,20 +13,51 @@
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts",
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc && node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "openkode",
+    "cli",
+    "coding-agent",
+    "ai",
+    "ollama",
+    "openai",
+    "claude",
+    "gemini"
+  ],
+  "author": "Yash Hegde",
   "license": "ISC",
-  "dependencies": {
-    "@clack/prompts": "^1.8.1",
-    "@openkode/core": "workspace:*",
-    "commander": "^15.0.0",
-    "dotenv": "^17.4.2"
-  },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "esbuild": "0.28.1",
     "tsx": "^4.23.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@clack/prompts": "^1.8.1",
+    "@openkode/core": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "homepage": "https://github.com/Yh010/OpenKode#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yh010/OpenKode.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Yh010/OpenKode/issues"
+  },
+  "os": [
+    "win32",
+    "darwin"
+  ],
+  "files": [
+    "dist/index.js",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

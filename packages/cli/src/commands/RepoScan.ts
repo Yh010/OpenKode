@@ -13,9 +13,10 @@ export function RepoScan(program: Command) {
             console.log("\n🤖 OpenKode:");
             console.log("scanning the codebase");
 
-            const result = await openkode.scan(currWorkDir) ;
-
-            console.log(result.terminal);
+            try {
+                const result = await openkode.scan(currWorkDir);
+                console.log(result.terminal);
+            } finally { await openkode.shutdown(); }
 
             /*
             console.dir(result,{

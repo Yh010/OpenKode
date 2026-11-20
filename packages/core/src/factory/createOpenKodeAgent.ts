@@ -6,12 +6,8 @@ import { ConsoleTelemetry } from "../telemetry/ConsoleTelemetry.js";
 import { TelemetryApiClient } from "../telemetry/TelemetryApiClient.js";
 
 export function createOpenKodeAgent(options: { accessToken?: () => Promise<string>; modelConfiguration?: ModelConfiguration } = {}) {
-    const collectorUrl = process.env.OPENKODE_TELEMETRY_COLLECTOR_URL;
-    if (!collectorUrl?.trim()) {
-        throw new Error(
-            "OPENKODE_TELEMETRY_COLLECTOR_URL must be set to enable telemetry.",
-        );
-    }
+    const collectorUrl = process.env.OPENKODE_TELEMETRY_COLLECTOR_URL?.trim()
+        || "https://openkode-collector.onrender.com/v1/telemetry/events";
     const provider = createModelProvider(options.modelConfiguration ? resolveModelConfiguration({}, options.modelConfiguration) : resolveModelConfiguration());
     const telemetryApiClient = new TelemetryApiClient(collectorUrl, options.accessToken);
     const batchTelemetryExporter = new BatchTelemetryExporter(telemetryApiClient) ;
