@@ -27,6 +27,7 @@ import path from "node:path";
 import type { ToolResult } from "../tools/interface/Tool.js";
 import { directFileRequestPaths, requestedFilePaths } from "./directFileRequest.js";
 import type { ProgressListener } from "./AgentProgress.js";
+import { withAnswerOutput, withDecisionOutput } from "../llm/DecisionStream.js";
 //type ToolFunction = (argument: string) => Promise<string> | string;
 
 interface LoopResult {
@@ -55,17 +56,17 @@ export class OpenKodeAgent {
  * Runs the agent until it produces a final answer or reaches its limit.
  *
  * @param prompt - The user's request.
- * @param onChunk - Reserved for streamed answer text.
+ * @param onChunk - Receives answer text when the request enables streaming.
  * @param onProgress - Receives local execution updates and short tool results.
  * @returns The final response and token usage.
  */
     async run(prompt: AgentRequest, onChunk: (text: string) => void, onProgress?: ProgressListener): Promise<LoopResult> {
-        return this.runtime.progress.run(onProgress, () => this.telemetry.withRun(
+        return withAnswerOutput(prompt.stream ? onChunk : undefined, () => this.runtime.progress.run(onProgress, () => this.telemetry.withRun(
             "openKode-run",
             () => withModelUsage(() => this.loop(prompt)),
             result => ({ metadata: { ...this.runtime.content({ originalRequest: prompt.prompt, finalOutput: result.response }), ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } }),
             prompt.ownership ? { ...prompt.ownership, ...(prompt.chatId ? { chatId: prompt.chatId } : {}) } : undefined,
-        ));
+        )));
     }
 
     // private async loop(prompt: AgentRequest, onChunk: (text: string) => void): Promise<LoopResult> {
@@ -193,7 +194,7 @@ export class OpenKodeAgent {
             ];
             for (let attempt = 0; attempt < 2; attempt++) {
                 this.runtime.progress.emit({ kind: "status", message: "Explaining the files that were read" });
-                const decision = await this.llm.generateForOrchestrator({ messages });
+                const decision = await withDecisionOutput("orchestrator", value => value.type === "final", () => this.llm.generateForOrchestrator({ messages }));
                 modelDecision = decision;
                 if (decision.type === "final" && typeof decision.answer === "string" && decision.answer.trim()
                     && requestedFiles.every(file => Object.hasOwn(sourceFiles, file))) {
@@ -237,7 +238,7 @@ export class OpenKodeAgent {
             const orchestratorStep = this.runtime.step("orchestrator", step, previousRuntimeStep?.stepId, { originalRequest: prompt.prompt, conversation: prompt.history ?? [] });
             let orchestratorResp: OrchestratorResponse;
             try {
-                orchestratorResp = await this.runtime.agentCall(orchestratorStep, SpanType.ORCHESTRATOR_RUN, () => orchestrator.run({ messages }), { task: prompt.prompt, conversation: prompt.history ?? [] });
+                orchestratorResp = await this.runtime.agentCall(orchestratorStep, SpanType.ORCHESTRATOR_RUN, () => withDecisionOutput("orchestrator", value => value.type === "final" && (Boolean(approvedPlan) || !shouldForcePlanner(prompt.prompt, { type: "final", answer: "" })), () => orchestrator.run({ messages })), { task: prompt.prompt, conversation: prompt.history ?? [] });
                 previousRuntimeStep = orchestratorStep;
             } catch (error) {
                 throw error;
@@ -325,7 +326,7 @@ export class OpenKodeAgent {
                             requestedNewFiles,
                         });
                         const plannerRuntimeStep = this.runtime.step("planner", plannerStep, previousRuntimeStep?.stepId, task.context);
-                        const result = await this.runtime.agentCall(plannerRuntimeStep, SpanType.PLANNER_RUN, () => planner.run(task), { task: task.task, feedback: task.feedback, sourceFilePaths: Object.keys(sourceFiles), discoveredFiles });
+                        const result = await this.runtime.agentCall(plannerRuntimeStep, SpanType.PLANNER_RUN, () => withDecisionOutput("planner", value => value.type === "research_result" && Array.isArray(value.sources) && value.sources.length > 0 && value.sources.every((source: unknown) => typeof source === "string" && Object.hasOwn(sourceFiles, source)), () => planner.run(task)), { task: task.task, feedback: task.feedback, sourceFilePaths: Object.keys(sourceFiles), discoveredFiles });
                         previousRuntimeStep = plannerRuntimeStep;
                         const retryPlanner = async (reasonCode: string, message: string) => {
                             feedback = message;

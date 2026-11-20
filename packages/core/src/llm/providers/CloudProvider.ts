@@ -9,6 +9,7 @@ import { createCoderMessages, createPlannerMessages } from "../prompts/workerMes
 import { decisionSchema, parseDecision, type DecisionRole } from "./responseSchemas.js";
 import { recordModelUsage } from "../usage.js";
 import { reportAgentProgress } from "../../agent/AgentProgress.js";
+import { decisionStream } from "../DecisionStream.js";
 
 export type CloudProviderOptions = { provider: "openai" | "anthropic" | "gemini"; model: string; apiKey: string };
 type Result = { text: string; usage: LLMUsage };
@@ -28,8 +29,16 @@ export class CloudProvider implements LLMProvider {
     async generateForCoder(request: OrchestratorResponse): Promise<CoderResponse> { return this.decide("coder", createCoderMessages(request)); }
     async generateForOrchestrator(request: LLMRequest): Promise<OrchestratorResponse> { return this.decide("orchestrator", request.messages); }
     private async decide<T>(role: DecisionRole, messages: Message[]): Promise<T> {
-        const result = await this.complete([...messages, { role: "system", content: "Wire format: return a JSON object with exactly one key, result, containing the decision required by the instructions. The runtime removes this wrapper before using your decision." }], role);
+        const input: Message[] = [...messages, { role: "system", content: "Wire format: return a JSON object with exactly one key, result, containing the decision required by the instructions. The runtime removes this wrapper before using your decision. For a research_result, emit sources before answer." }];
+        const output = decisionStream(role, true);
+        let result: Result;
+        if (output) {
+            let text = "";
+            const { usage } = await this.streamMessages(input, chunk => { text += chunk; output.append(chunk); }, role);
+            result = { text, usage };
+        } else result = await this.complete(input, role);
         const decision = parseDecision<T>(result.text);
+        output?.finish(decision);
         // Usage stays outside the model's decision fields and is not serialized
         // into subsequent prompts; telemetry and the CLI can still read it.
         Object.defineProperty(decision, "usage", { value: result.usage, enumerable: false });
@@ -121,8 +130,11 @@ export class CloudProvider implements LLMProvider {
         return { text, usage };
     }
     async stream(request: LLMRequest, onChunk: (text: string) => void): Promise<{ usage: LLMUsage }> {
+        return this.streamMessages(request.messages, onChunk);
+    }
+    private async streamMessages(messages: Message[], onChunk: (text: string) => void, role?: DecisionRole): Promise<{ usage: LLMUsage }> {
         const started = performance.now();
-        const response = await this.start(request.messages, true);
+        const response = await this.start(messages, true, role);
         let usage: LLMUsage | undefined;
         let geminiMetadata: Json | undefined;
         let finished = false;

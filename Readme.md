@@ -68,6 +68,7 @@ OpenKode is an active prototype with a small, controlled toolset. It supports lo
 
 - A CLI that accepts a natural-language request.
 - Live progress for agent steps, file reads, searches, edits and verification, with short tool-result previews. Trace events are exported in the background without printing raw telemetry objects in the terminal.
+- Streamed answer text for Gemini, OpenAI, Claude and Ollama in interactive and one-shot mode. Tool decisions stay internal. Research answers stream after their source references have passed the repository evidence checks; providers that emit references last may buffer that answer until validation finishes. Interrupted output is marked incomplete.
 - Orchestrator, planner, and coder workers using Ollama, OpenAI, Claude, or Gemini.
 - Direct file-content requests through `ReadFileTool`.
 - Direct file-creation/replacement requests through `WriteFileTool`.

@@ -17,7 +17,7 @@ const planner = { anyOf: [
     object({ type: literal("tool_call"), toolName: literal("ReadFileTool"), fileToRead: text }),
     object({ type: literal("tool_call"), toolName: literal("GlobTool"), pattern: text }),
     object({ type: literal("tool_call"), toolName: literal("GrepTool"), pattern: text, paths: texts }),
-    object({ type: literal("research_result"), answer: text, sources: texts }),
+    object({ type: literal("research_result"), sources: texts, answer: text }),
 ] };
 
 export type DecisionRole = "orchestrator" | "planner" | "coder";

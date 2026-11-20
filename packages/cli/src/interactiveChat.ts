@@ -4,6 +4,7 @@ import { AuthenticatedSession, configureAuthNetwork } from "./auth/Authenticated
 import { loadModelConfiguration } from "./model/ModelConfigurationStore.js";
 import { createProgressDisplay } from "./progress.js";
 import { readChatPrompt } from "./chatPrompt.js";
+import { createAnswerOutput } from "./answerOutput.js";
 
 const HELP = [
     "/new [title]    Start a new chat",
@@ -67,14 +68,16 @@ async function runSignedInChat(identity: AuthenticatedSession): Promise<void> {
             const history = chat.turns;
             chat = await store.append(chat.id, "user", prompt);
             const progress = createProgressDisplay();
+            const answer = createAnswerOutput(() => progress.finish("OpenKode is replying"), response => p.note(response, "OpenKode"));
             try {
-                const result = await agent.run({ prompt, chatId: chat.id, history, ownership: {
+                const result = await agent.run({ prompt, stream: true, chatId: chat.id, history, ownership: {
                     userId: identity.user.id, installationId: identity.installationId, sessionId: identity.sessionId,
-                } }, () => {}, progress.update);
+                } }, answer.chunk, progress.update);
                 progress.finish("OpenKode replied");
                 chat = await store.append(chat.id, "assistant", result.response);
-                p.note(result.response, "OpenKode");
+                answer.finish(result.response);
             } catch (error) {
+                answer.interrupt();
                 progress.finish("OpenKode could not complete the request");
                 p.log.error(error instanceof Error ? error.message : String(error));
             }
