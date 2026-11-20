@@ -87,6 +87,17 @@ jobs:
         run: node scripts/release-version.mjs prepare
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
+      - name: Initialize Windows credential storage
+        if: runner.os == 'Windows'
+        shell: powershell
+        timeout-minutes: 2
+        run: |
+          Add-Type -AssemblyName System.Security
+          $probe = [Text.Encoding]::UTF8.GetBytes('openkode-ci-credential-check')
+          $sealed = [Security.Cryptography.ProtectedData]::Protect($probe, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+          $opened = [Security.Cryptography.ProtectedData]::Unprotect($sealed, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+          if ([Convert]::ToBase64String($opened) -ne [Convert]::ToBase64String($probe)) { throw 'Windows credential storage check failed' }
+          Write-Output 'Windows credential storage is ready.'
       - run: pnpm test
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
