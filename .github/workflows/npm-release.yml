@@ -126,10 +126,11 @@ jobs:
         run: |
           version=$(node -p "require('./packages/cli/package.json').version")
           cd "$RUNNER_TEMP"
-          for attempt in 1 2 3; do
+          npm view "openkode@$version" name version dist.shasum dist.tarball dist-tags.latest --json --registry=https://registry.npmjs.org/
+          for attempt in $(seq 1 15); do
             npm install --global "openkode@$version" --registry=https://registry.npmjs.org/ && break
-            if [ "$attempt" = 3 ]; then exit 1; fi
-            sleep 20
+            if [ "$attempt" = 15 ]; then exit 1; fi
+            sleep 30
           done
           npm view "openkode@$version" name version dist.shasum dist-tags.latest --json --registry=https://registry.npmjs.org/
           test "$(npm view openkode dist-tags.latest --registry=https://registry.npmjs.org/)" = "$version"
