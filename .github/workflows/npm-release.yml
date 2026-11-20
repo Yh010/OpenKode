@@ -57,7 +57,8 @@ jobs:
       - run: node --test scripts/test/*.test.mjs
       - run: pnpm build
       - run: pnpm pack:cli
-      - name: Check package contents
+      - name: Validate prospective publication
+        if: needs.plan.outputs.publish == 'true'
         run: npm publish .cache/npm-release/openkode-*.tgz --dry-run --access public --registry=https://registry.npmjs.org/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
