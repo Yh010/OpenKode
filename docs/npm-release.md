@@ -23,6 +23,8 @@ Run the workflow with `action: stage`. npm uploads the tested archive and reserv
 the package name. On npmjs.com, review the staged `openkode` version and approve
 it. npm requires the account owner to complete two-factor authentication for this
 approval. Staging alone does not make the CLI version available to install.
+After approving the first release, run the workflow with `action: verify-public`
+to test installation from the public registry on Windows and macOS.
 
 ## Following releases
 

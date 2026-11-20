@@ -11,6 +11,7 @@ on:
           - validate
           - stage
           - publish
+          - verify-public
 
 permissions:
   contents: read
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.action != 'verify-public'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -74,7 +75,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: inputs.action != 'validate'
+    if: inputs.action == 'stage' || inputs.action == 'publish'
     needs: [build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -107,7 +108,7 @@ jobs:
         run: npm publish release/openkode-*.tgz --access public --provenance --registry=https://registry.npmjs.org/
 
   verify-public:
-    if: inputs.action == 'publish'
+    if: always() && github.ref == 'refs/heads/main' && (inputs.action == 'verify-public' || (inputs.action == 'publish' && needs.release.result == 'success'))
     needs: release
     strategy:
       fail-fast: false
